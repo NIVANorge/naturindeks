@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "naturindeks"
+version = "0.1.0"
+description = "Tools that are needed for collecting and calculating naturindeks data"
+authors = ["Roar Brænden <roar.branden@niva.no>"]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.10"
+aquamonitor = "0.3.4"
+requests = "^2.24"
+pandas = "^2.2"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

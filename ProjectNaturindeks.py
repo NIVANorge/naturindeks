@@ -42,7 +42,7 @@ def downloadNIVA_Hardbunn():
 
 def downloadNIVA_MarinChla():
     am.Query(where="station_type_id=3 and Water.parameter_id = 261 and sample_date>=01.01.2020") \
-        .export(format="excel", filename="Nivabase-plankton.xlsx") \
+        .export(format="excel", filename="Nivabase-marin-klfa.xlsx") \
         .download(path="data/")
 
 

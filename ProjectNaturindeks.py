@@ -4,14 +4,12 @@ import json
 import pandas as pd
 from pandas import ExcelWriter as xlsWriter
 
-#am.host = "https://test-aquamonitor.niva.no/"
-
 
 def downloadNIVA_PTI():
     # PTI -> plankton.parameter_id = 7
-    am.Query(where="Plankton.parameter_id=7") \
+    am.Query(where="Plankton.parameter_id=7 and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-plankton.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
 
 
 def downloadNIVA_Begroing():
@@ -19,32 +17,33 @@ def downloadNIVA_Begroing():
     # AIP -> begroing.parameter_id = 2
     # HBI2 -> begroing.parameter_id = 64
 
-    am.Query(where="Begroing.parameter_id in (1,2,64)") \
+    am.Query(where="Begroing.parameter_id in (1,2,64) and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-begroing.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
 
 
 def downloadNIVA_ASPT():
-    am.Query(where="Bunndyr.parameter_id = 1") \
+    am.Query(where="Bunndyr.parameter_id = 1 and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-bunndyr.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
 
 
 def downloadNIVA_Blotbunn():
-    am.Query(where="Blotbunn.parameter_id in (111,26,15,11,116)") \
+    am.Query(where="Blotbunn.parameter_id in (111,26,15,11,116) and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-blotbunn.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
 
 
 def downloadNIVA_Hardbunn():
-    am.Query(where="Hardbunn.parameter_id in (13,189,190,191,187,188,184,185,186,113)") \
+    am.Query(where="Hardbunn.parameter_id in (13,189,190,191,187,188,184,185,186,113) and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-hardbunn.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
+
 
 def downloadNIVA_MarinChla():
-    am.Query(where="station_type_id=3 and Water.parameter_id = 261") \
+    am.Query(where="station_type_id=3 and Water.parameter_id = 261 and sample_date>=01.01.2020") \
         .export(format="excel", filename="Nivabase-plankton.xlsx") \
-        .download(path="C:/Naturindeks/")
+        .download(path="data/")
 
 
 def downloadVannNett(report):

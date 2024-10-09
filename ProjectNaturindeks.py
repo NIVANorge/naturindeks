@@ -46,96 +46,10 @@ def downloadNIVA_MarinChla():
         .download(path="data/")
 
 
-def downloadVannNett(report):
-    if report == "elver":
-        req_data = {
-            "ReportID": 110,
-            "Page": 1,
-            "HitsPerPage": 100,
-            "WhereColumns": [],
-            "SelectColumns": [3553, 3554, 3555, 3556, 3557, 3558, 3560, 3562, 3564, 3566, 3568, 3570, 3572, 3574, 3576,
-                              3577, 3578]
-        }
-        writer = xlsWriter("C:/Naturindeks/Vann-nett-elver.xlsx")
-        konv_vanntype_df = pd.read_excel("C:/Naturindeks/Konvertering_vanntyper.xlsx", "Elv")
-    elif report == "kyst":
-        req_data = {"ReportID": 111,
-                    "Page": 1,
-                    "HitsPerPage": 100,
-                    "WhereColumns": [],
-                    "SelectColumns": [3580, 3581, 3582, 3583, 3584, 3585, 3587, 3589, 3591, 3593, 3595, 3597, 3599,
-                                      3601, 3603, 3605, 3607, 3608, 3609]
-                    }
-        writer = xlsWriter("C:/Naturindeks/Vann-nett-kyst.xlsx")
-        konv_vanntype_df = pd.read_excel("C:/Naturindeks/Konvertering_vanntyper.xlsx", "Kyst")
-    else:
-        req_data = {
-            "ReportID": 109,
-            "Page": 1,
-            "HitsPerPage": 100,
-            "WhereColumns": [],
-            "SelectColumns": [
-                3524, 3525, 3526, 3527, 3528, 3529, 3531, 3533,
-                3535, 3537, 3539, 3541, 3543, 3545, 3547, 3549,
-                3550, 3551
-            ]}
-        writer = xlsWriter("C:/Naturindeks/Vann-nett-sjoer.xlsx")
-        konv_vanntype_df = pd.read_excel("C:/Naturindeks/Konvertering_vanntyper.xlsx", "Innsjø")
-
-    out_frame = pd.DataFrame(columns=["VannforekomstID", "Vannforekomstnavn", "Vanntype", "Økoregion", "Interkalibreringstype", "Nasjonal vanntype"])
-    out_frame.set_index("VannforekomstID", inplace=True)
-
-    out_frame["Vannforekomstnavn"] = None
-    out_frame["Vanntype"] = None
-    out_frame["Økoregion"] = None
-    out_frame["Interkalibreringstype"] = None
-    out_frame["Nasjonal vanntype"] = None
-
-    while True:
-        resp = req.post("https://vann-nett.no/portal-api/api/ExecuteQuery", json=req_data)
-        resp_data = json.loads(resp.text)
-        resp_vannf = resp_data["Result"]
-
-        for vannf in resp_vannf:
-            vannforekomstid = vannf["VannforekomstID"]
-            out_frame.at[vannforekomstid, "Vannforekomstnavn"] = vannf["Vannforekomstnavn"]
-            out_frame.at[vannforekomstid, "Vanntype"] = vannf["Vanntype"]
-            if report == "kyst":
-                out_frame.at[vannforekomstid, "Økoregion"] = vannf["Økoregion kyst"]
-            else:
-                out_frame.at[vannforekomstid, "Økoregion"] = vannf["Økoregion"]
-            if konv_vanntype_df is None:
-                interkalibrering = vannf["Interkalibreringstype"]
-            else:
-                rows = konv_vanntype_df.loc[konv_vanntype_df["TypeCode"] == vannf["Vanntype"]]
-                if rows.empty:
-                    interkalibrering = vannf["Interkalibreringstype"]
-                else:
-                    interkalibrering = rows.iloc[0]["IntercalibrationTypeID"]
-                    print("Konvertering:" + interkalibrering)
-                    if interkalibrering == "Not applicable":
-                        interkalibrering = vannf["Interkalibreringstype"]
-
-
-            out_frame.at[vannforekomstid, "Interkalibreringstype"] = interkalibrering
-            out_frame.at[vannforekomstid, "Nasjonal vanntype"] = vannf["Nasjonal vanntype"]
-
-        print("Page: " + str(resp_data["Page"]) + " av " + str(resp_data["PageCount"]))
-        if resp_data["Page"] == resp_data["PageCount"]:
-            break
-
-        req_data["Page"] = resp_data["Page"] + 1
-
-    out_frame.to_excel(writer)
-    writer.save()
-
-
 def rewriteNIVA_PTI():
-    pti_df = pd.read_excel("c:/Naturindeks/Nivabase-plankton.xlsx", "PlanktonParameter", header=1)
+    pti_df = pd.read_excel("data/Nivabase-plankton.xlsx", "PlanktonParameter", header=1)
 
-    point_df = pd.read_excel("c:/Naturindeks/Nivabase-plankton.xlsx", "StationPoint")
-
-    vannett_df = pd.read_excel("c:/Naturindeks/Vann-nett-sjoer.xlsx", "Sheet1")
+    point_df = pd.read_excel("data/Nivabase-plankton.xlsx", "StationPoint")
 
     data_rows = []
     for idx, pti_row in pti_df.iterrows():
@@ -145,21 +59,13 @@ def rewriteNIVA_PTI():
         longitude = point["Longitude"]
 
         kommune = callGeoserverQueryKommuneF(latitude, longitude)
-        vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_f", latitude, longitude)
-
-        okoregion = ""
-        vanntype = ""
-        interkalibrering = ""
-        if not vannforekomst is None:
-            try:
-                vannett_row = vannett_df.loc[vannett_df["VannforekomstID"] == vannforekomst].iloc[0]
-                if not vannett_row.empty:
-                    okoregion = vannett_row["Økoregion"]
-                    vanntype = vannett_row["Vanntype"]
-                    interkalibrering = vannett_row["Interkalibreringstype"]
-            except IndexError:
-                print(vannforekomst + " mangler i Vann-nett-sjoer.xlsx")
-
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_innsjovannforekomster_f", latitude, longitude)
+        if vannforekomst is not None:
+            vannforekomstID = vannforekomst["vannforekomstID"]
+            okoregion = vannforekomst["okoregion"]
+            vanntype = vannforekomst["vanntype"]
+            interkalibrering = vannforekomst["interkalibrering"]
+        
         sampledate = str(pti_row[6])[0:10]
 
         # Check for dublett on StationId / Date before appending.
@@ -169,7 +75,7 @@ def rewriteNIVA_PTI():
                           "Date": sampledate,
                           "PTI": round(pti_row[10], 5),
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst,
+                          "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
                           "Vanntype": vanntype,
                           "Interkalibreringstype": interkalibrering,
@@ -179,7 +85,7 @@ def rewriteNIVA_PTI():
                           columns=["Latitude", "Longitude", "Date", "PTI", "Kommunenr",
                                    "VannforekomstID", "Økoregion",
                                    "Vanntype", "Interkalibreringstype", "Station_id"])
-    writer = xlsWriter("C:/Naturindeks/Plankton-niva.xlsx")
+    writer = xlsWriter("data/Plankton-niva.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -200,19 +106,11 @@ def rewriteNIVA_Begroing():
 
         kommune = callGeoserverQueryKommuneF(latitude, longitude)
         vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_l", latitude, longitude)
-
-        okoregion = ""
-        vanntype = ""
-        nasj_vanntype = ""
-        if not vannforekomst is None:
-            try:
-                vannett_row = vannett_df.loc[vannett_df["VannforekomstID"] == vannforekomst].iloc[0]
-                if not vannett_row.empty:
-                    okoregion = vannett_row["Økoregion"]
-                    vanntype = vannett_row["Vanntype"]
-                    nasj_vanntype = vannett_row["Nasjonal vanntype"]
-            except IndexError:
-                print(vannforekomst + " mangler i Vann-nett-elver.xlsx")
+        if vannforekomst is not None:
+            vannforekomstID = vannforekomst["vannforekomstID"]
+            okoregion = vannforekomst["okoregion"]
+            vanntype = vannforekomst["vanntype"]
+            nasj_vanntype = vannforekomst["nasjonalvanntype"]
 
         sampledate = str(begroing_row[5])[0:10]
 
@@ -225,7 +123,7 @@ def rewriteNIVA_Begroing():
                           "AIP": round(begroing_row[6], 5),
                           "HBI2": round(begroing_row[7], 5),
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst,
+                          "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
                           "Vanntype": vanntype,
                           "EQR_Type": nasj_vanntype,
@@ -496,18 +394,18 @@ def callVannmiljoLokalitet(code):
 
 
 def callGeoserverQueryVannforekomst(layer, latitude, longitude):
-    url = "http://www.aquamonitor.no/geoserver/rest/query/no.niva/" + layer + "/distance/4326_" \
+    url = "https://geoserver.t.niva.no/rest/query/no.niva.public/" + layer + "/distance/4326_" \
           + str(latitude) + "_" + str(longitude) + "_100/features.json"
     resp = req.get(url)
     features = json.loads(resp.text)["features"]
     if len(features) == 1:
-        return features[0]["vannforekomstid"]
+        return features[0]
     else:
         return None
 
 
 def callGeoserverQueryKommuneF(latitude, longitude):
-    url = "https://test-aquamonitor.niva.no/geoserver/rest/query/no.niva/ni_kommune_f/distance/4326_" \
+    url = "https://aquamonitor.niva.no/geoserver/rest/query/no.niva/ni_kommune_f/distance/4326_" \
           + str(latitude) + "_" + str(longitude) + "_0.01/features.json"
     resp = req.get(url)
     features = json.loads(resp.text)["features"]

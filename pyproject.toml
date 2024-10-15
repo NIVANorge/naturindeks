@@ -11,6 +11,14 @@ aquamonitor = "0.3.4"
 requests = "^2.24"
 pandas = "^2.2"
 
+[tool.poetry.scripts]
+download-niva-pti = "naturindeks.main:downloadNIVA_PTI"
+download-niva-begroing = "naturindeks.main:downloadNIVA_Begroing"
+download-niva-aspt = "naturindeks.main:downloadNIVA_ASPT"
+download-niva-blotbunn = "naturindeks.main:downloadNIVA_Blotbunn"
+download-niva-hardbunn = "naturindeks.main:downloadNIVA_Hardbunn"
+download-niva-marin = "naturindeks.main:downloadNIVA_MarinChla"
+
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"
 

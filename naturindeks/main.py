@@ -2,7 +2,7 @@ import aquamonitor as am
 import requests as req
 import json
 import pandas as pd
-from pandas import ExcelWriter as xlsWriter
+from pandas import ExcelWriter
 
 ROOT_PATH = "data/"
 
@@ -48,33 +48,35 @@ def downloadNIVA_MarinChla():
 
 
 def rewriteNIVA_PTI():
-    pti_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "PlanktonParameter", header=1)
+    pti_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "Plankton parameter values", header=0)
 
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "StationPoint")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "Stations")
 
     data_rows = []
     for idx, pti_row in pti_df.iterrows():
-        stationid = pti_row[2]
-        point = point_df.loc[point_df["StationId"] == stationid].iloc[0]
+        stationid = pti_row["Station id"]
+        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
         latitude = point["Latitude"]
         longitude = point["Longitude"]
 
         kommune = callGeoserverQueryKommuneF(latitude, longitude)
-        vannforekomst = callGeoserverQueryVannforekomst("miljodir_innsjovannforekomster_f", latitude, longitude)
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_innsjovannforekomster_f", \
+                                                        latitude, longitude)
         if vannforekomst is not None:
-            vannforekomstID = vannforekomst["vannforekomstID"]
+            vannforekomstID = vannforekomst["vannforekomstid"]
             okoregion = vannforekomst["okoregion"]
             vanntype = vannforekomst["vanntype"]
-            interkalibrering = vannforekomst["interkalibrering"]
+            interkalibrering = vannforekomst["interkalibreringstype"]
         
-        sampledate = str(pti_row[6])[0:10]
+        sampledate = str(pti_row["Sample date"])[0:10]
 
         # Check for dublett on StationId / Date before appending.
-        if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate]) == 0:
+        if len([r for r in data_rows if r["Station_id"] == stationid \
+                and r["Date"] == sampledate]) == 0:
             data_rows.append({"Latitude": point["Latitude"],
                           "Longitude": point["Longitude"],
                           "Date": sampledate,
-                          "PTI": round(pti_row[10], 5),
+                          "PTI": round(pti_row[8], 8),
                           "Kommunenr": kommune,
                           "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
@@ -86,43 +88,44 @@ def rewriteNIVA_PTI():
                           columns=["Latitude", "Longitude", "Date", "PTI", "Kommunenr",
                                    "VannforekomstID", "Økoregion",
                                    "Vanntype", "Interkalibreringstype", "Station_id"])
-    writer = xlsWriter(f"{ROOT_PATH}Plankton-niva.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
+    with ExcelWriter(f"{ROOT_PATH}Plankton-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
 
 def rewriteNIVA_Begroing():
-    begroing_df = pd.read_excel(f"{ROOT_PATH}Nivabase-begroing.xlsx", "BegroingVariables")
+    begroing_df = pd.read_excel(f"{ROOT_PATH}Nivabase-begroing.xlsx", "Begroing variabler")
 
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-begroing.xlsx", "StationPoint")
-
-    vannett_df = pd.read_excel(f"{ROOT_PATH}Vann-nett-elver.xlsx", "Sheet1")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-begroing.xlsx", "Stations")
 
     data_rows = []
     for idx, begroing_row in begroing_df.iterrows():
-        stationid = begroing_row[2]
-        point = point_df.loc[point_df["StationId"] == stationid].iloc[0]
+        stationid = begroing_row["Station id"]
+        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
         latitude = point["Latitude"]
         longitude = point["Longitude"]
 
         kommune = callGeoserverQueryKommuneF(latitude, longitude)
-        vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_l", latitude, longitude)
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_elvevannforekomster_l", latitude, longitude)
+        vannforekomstID = None
+        okoregion = None
+        vanntype = None
+        nasj_vanntype = None
         if vannforekomst is not None:
-            vannforekomstID = vannforekomst["vannforekomstID"]
+            vannforekomstID = vannforekomst["vannforekomstid"]
             okoregion = vannforekomst["okoregion"]
             vanntype = vannforekomst["vanntype"]
             nasj_vanntype = vannforekomst["nasjonalvanntype"]
 
-        sampledate = str(begroing_row[5])[0:10]
+        sampledate = str(begroing_row["Sample date"])[0:10]
 
         # Check for dublett on StationId / Date before appending.
         if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate]) == 0:
             data_rows.append({"Latitude": point["Latitude"],
                           "Longitude": point["Longitude"],
                           "Date": sampledate,
-                          "PIT": round(begroing_row[8], 5),
-                          "AIP": round(begroing_row[6], 5),
-                          "HBI2": round(begroing_row[7], 5),
+                          "PIT": round(begroing_row["PIT"], 5),
+                          "AIP": round(begroing_row["AIP"], 5),
+                          "HBI2": round(begroing_row["HBI2"], 5),
                           "Kommunenr": kommune,
                           "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
@@ -134,49 +137,32 @@ def rewriteNIVA_Begroing():
                           columns=["Latitude", "Longitude", "Date", "PIT", "AIP", "HBI2", "Kommunenr",
                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Begroing-niva.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
+    with ExcelWriter(f"{ROOT_PATH}Begroing-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
 
 def rewriteNIVA_Blotbunn():
-    indexes_df = pd.read_excel(f"{ROOT_PATH}Nivabase-blotbunn.xlsx", "BlotbunnVariables", header=1)
+    indexes_df = pd.read_excel(f"{ROOT_PATH}Nivabase-blotbunn.xlsx", "Bløtbunn variabler")
 
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-blotbunn.xlsx", "StationPoint")
-
-    vannett_df = pd.read_excel(f"{ROOT_PATH}Vann-nett-kyst.xlsx", "Sheet1")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-blotbunn.xlsx", "Stations")
 
     data_rows = []
     for idx, index_row in indexes_df.iterrows():
-        stationid = index_row[4]
-        latitude = None
-        longitude = None
-        kommune = None
-        vannforekomst = None
-        try:
-            point = point_df.loc[point_df["StationId"] == stationid].iloc[0]
-            latitude = point["Latitude"]
-            longitude = point["Longitude"]
+        stationid = index_row["Station id"]
+        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
+        latitude = point["Latitude"]
+        longitude = point["Longitude"]
 
-            kommune = callGeoserverQueryKommuneF(latitude, longitude)
-            vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_kyst_f", latitude, longitude)
-        except IndexError:
-            print(str(stationid) + " mangler i StationPoint")
-        okoregion = ""
-        vanntype = ""
-        nasj_vanntype = ""
-        if not vannforekomst is None:
-            try:
-                vannett_row = vannett_df.loc[vannett_df["VannforekomstID"] == vannforekomst].iloc[0]
-                if not vannett_row.empty:
-                    okoregion = vannett_row["Økoregion"]
-                    vanntype = vannett_row["Vanntype"]
-                    nasj_vanntype = vannett_row["Nasjonal vanntype"]
-            except IndexError:
-                print(vannforekomst + " mangler i Vann-nett-kyst.xlsx")
+        kommune = callGeoserverQueryKommuneF(latitude, longitude)
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_kystvannforekomster_f", latitude, longitude)
+        if vannforekomst is not None:
+            vannforekomstid = vannforekomst["vannforekomstid"]
+            okoregion = vannforekomst["okoregion"]
+            vanntype = vannforekomst["vanntype"]
+            nasjonalvanntype = vannforekomst["nasjonalvanntype"]
 
-        sampledate = str(index_row[5])[0:10]
-        grabb = index_row[6]
+        sampledate = str(index_row["Sample date"])[0:10]
+        grabb = index_row["Grab"]
 
         # Check for dublett on StationId / Date / Grabb before appending.
         if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate and r["Grabb"] == grabb]) == 0:
@@ -184,25 +170,24 @@ def rewriteNIVA_Blotbunn():
                           "Longitude": longitude,
                           "Date": sampledate,
                           "Grabb": grabb,
-                          "ES100": round(index_row[7], 5),
-                          "H": round(index_row[8], 5),
-                          "ISI": round(index_row[9], 5),
-                          "NQI": round(index_row[10], 5),
-                          "NSI": round(index_row[11], 5),
+                          "ES100": round(index_row["ES100 Grabb"], 5),
+                          "H": round(index_row["H Grabb"], 5),
+                          "ISI": round(index_row["ISI2012 Grabb"], 5),
+                          "NQI": round(index_row["NQI1 Grabb"], 5),
+                          "NSI": round(index_row["NSI2012 Grabb"], 5),
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst,
+                          "VannforekomstID": vannforekomstid,
                           "Økoregion": okoregion,
                           "Vanntype": vanntype,
-                          "EQR_Type": nasj_vanntype,
+                          "EQR_Type": nasjonalvanntype,
                           "Station_id": stationid})
 
     out_df = pd.DataFrame(data_rows,
                           columns=["Latitude", "Longitude", "Date", "Grabb", "ES100", "H", "ISI", "NQI", "NSI", "Kommunenr",
                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
+    with ExcelWriter(f"{ROOT_PATH}Blotbunn-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
-    writer = xlsWriter(f"{ROOT_PATH}Blotbunn-niva.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
 
 
 def rewriteNIVA_Hardbunn():
@@ -271,7 +256,7 @@ def rewriteNIVA_Hardbunn():
                                    "RSLA", "RSLA1", "RSLA2", "RSLA3", "RSL4", "RSL5", "Kommunenr",
                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Hardbunn-niva.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Hardbunn-niva.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -337,7 +322,7 @@ def rewriteNIVA_MarinPlankton():
                                    "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type",
                                    "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Marin-Plankton-niva.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Marin-Plankton-niva.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -367,7 +352,7 @@ def rewriteNIVA_ASPT():
                           "VannforekomstID": vannforekomst})
 
     out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "ASPT", "Kommunenr", "VannforekomstID"])
-    writer = xlsWriter(f"{ROOT_PATH}Bunndyr.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Bunndyr.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -395,9 +380,17 @@ def callVannmiljoLokalitet(code):
 
 
 def callGeoserverQueryVannforekomst(layer, latitude, longitude):
-    url = "https://geoserver.t.niva.no/rest/query/no.niva.public/" + layer + "/distance/4326_" \
+    """ Will get vannforekomst in addition to vanntype from cloud Geoserver
+    :param layer:
+    :param latitude:
+    :param longitude:
+    :return:
+    """
+
+    url = "https://geoserver.p.niva.no/rest/query/no.niva.public/" + layer + "/distance/4326_" \
           + str(latitude) + "_" + str(longitude) + "_100/features.json"
     resp = req.get(url)
+    print(f"Url: {url}\nResponse: {resp.text}")
     features = json.loads(resp.text)["features"]
     if len(features) == 1:
         return features[0]
@@ -406,9 +399,10 @@ def callGeoserverQueryVannforekomst(layer, latitude, longitude):
 
 
 def callGeoserverQueryKommuneF(latitude, longitude):
-    url = "https://aquamonitor.niva.no/geoserver/rest/query/no.niva/ni_kommune_f/distance/4326_" \
-          + str(latitude) + "_" + str(longitude) + "_0.01/features.json"
+    url = "https://aquamonitor.niva.no/geoserver/rest/query/no.norgedigitalt/ni_kommune_f/geometry/4326_POINT(" \
+          + str(longitude) + "%20" + str(latitude) + ")/features.json"
     resp = req.get(url)
+    print(f"Url: {url}\nResponse: {resp.text}")
     features = json.loads(resp.text)["features"]
     if len(features) == 1:
         return features[0]["KOMM"]
@@ -515,7 +509,7 @@ def rewriteVannmiljo_PTI():
                                               "Kommunenr", "VannforekomstID", "Økoregion",
                                               "Vanntype", "Interkalibreringstype",
                                               "Plankton_parameter_values_id", "Station_id"])
-    writer = xlsWriter(f"{ROOT_PATH}Plankton-vannmiljo.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Plankton-vannmiljo.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -580,7 +574,7 @@ def rewriteVannmiljo_Begroing():
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
                                               "EQR_Type", "Begalg_parameter_values_id", "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Vannmiljo-Begroing.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Vannmiljo-Begroing.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -650,7 +644,7 @@ def rewriteVannmiljo_Blotbunn():
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
                                               "EQR_Type", "BB_Index_Values_id", "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Vannmiljo-Bløtbunn.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Vannmiljo-Bløtbunn.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -717,7 +711,7 @@ def rewriteVannmiljo_Hardbunn():
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
                                               "EQR_Type", "HB_Parameter_Values_Value_id", "Station_id"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Vannmiljo-Hardbunn.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Vannmiljo-Hardbunn.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -738,7 +732,7 @@ def mergePlankton():
                                               "Kommunenr", "VannforekomstID", "Økoregion",
                                               "Vanntype", "Interkalibreringstype"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Naturindeks-plankton-PTI.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Naturindeks-plankton-PTI.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -814,7 +808,7 @@ def mergeBegroing():
     out_df = pd.DataFrame(niva_df, columns=["Latitude", "Longitude", "Date", "PIT", "AIP", "HBI2",
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Naturindeks-begroing.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Naturindeks-begroing.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -908,7 +902,7 @@ def mergeBlotbunn():
     out_df = pd.DataFrame(niva_df, columns=["Latitude", "Longitude", "Date", "Grabb", "ES100", "H", "ISI", "NQI", "NSI",
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Naturindeks-blotbunn.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Naturindeks-blotbunn.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -1014,7 +1008,7 @@ def mergeHardbunn():
                                             "RSLA2", "RSLA3", "RSL4", "RSL5",
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
 
-    writer = xlsWriter(f"{ROOT_PATH}Naturindeks-Hardbunn.xlsx")
+    writer = ExcelWriter(f"{ROOT_PATH}Naturindeks-Hardbunn.xlsx")
     out_df.to_excel(writer)
     writer.save()
 
@@ -1048,6 +1042,6 @@ def rewriteKommuneVannforekomst(resultat_fil, kommune_fil, vann_nett_fil):
         })
 
     out_df = pd.DataFrame(data_rows, columns=["Kommunenr", "VannforekomstID", "Økoregion", "Vanntype"])
-    writer = xlsWriter(f"{ROOT_PATH}{resultat_fil}")
+    writer = ExcelWriter(f"{ROOT_PATH}{resultat_fil}")
     out_df.to_excel(writer)
     writer.save()

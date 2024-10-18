@@ -10,6 +10,7 @@ python = "^3.10"
 aquamonitor = "0.3.4"
 requests = "^2.24"
 pandas = "^2.2"
+openpyxl = "^3.1"
 
 [tool.poetry.scripts]
 download-niva-pti = "naturindeks.main:downloadNIVA_PTI"
@@ -18,6 +19,9 @@ download-niva-aspt = "naturindeks.main:downloadNIVA_ASPT"
 download-niva-blotbunn = "naturindeks.main:downloadNIVA_Blotbunn"
 download-niva-hardbunn = "naturindeks.main:downloadNIVA_Hardbunn"
 download-niva-marin = "naturindeks.main:downloadNIVA_MarinChla"
+rewrite-niva-pti = "naturindeks.main:rewriteNIVA_PTI"
+rewrite-niva-begroing = "naturindeks.main:rewriteNIVA_Begroing"
+rewrite-niva-blotbunn = "naturindeks.main:rewriteNIVA_Blotbunn"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"

@@ -22,6 +22,9 @@ download-niva-marin = "naturindeks.main:downloadNIVA_MarinChla"
 rewrite-niva-pti = "naturindeks.main:rewriteNIVA_PTI"
 rewrite-niva-begroing = "naturindeks.main:rewriteNIVA_Begroing"
 rewrite-niva-blotbunn = "naturindeks.main:rewriteNIVA_Blotbunn"
+rewrite-niva-hardbunn = "naturindeks.main:rewriteNIVA_Hardbunn"
+rewrite-niva-aspt = "naturindeks.main:rewriteNIVA_ASPT"
+rewrite-niva-marin = "naturindeks.main:rewriteNIVA_MarinPlankton"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"

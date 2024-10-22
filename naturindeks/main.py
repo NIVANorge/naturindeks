@@ -1,10 +1,16 @@
 import aquamonitor as am
-import requests as req
+import requests
+from requests.adapters import HTTPAdapter, Retry
 import json
 import pandas as pd
 from pandas import ExcelWriter
 
 ROOT_PATH = "data/"
+
+req = requests.Session()
+retries = Retry(total=5, backoff_factor=0.1)
+req.mount("https://", HTTPAdapter(max_retries=retries))
+
 
 def downloadNIVA_PTI():
     # PTI -> plankton.parameter_id = 7
@@ -193,38 +199,26 @@ def rewriteNIVA_Blotbunn():
 def rewriteNIVA_Hardbunn():
     indexes_df = pd.read_excel(f"{ROOT_PATH}Nivabase-hardbunn.xlsx", "HardbunnVariables", header=2)
 
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-hardbunn.xlsx", "StationPoint")
-
-    vannett_df = pd.read_excel(f"{ROOT_PATH}Vann-nett-kyst.xlsx", "Sheet1")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-hardbunn.xlsx", "Stations")
 
     data_rows = []
     for idx, index_row in indexes_df.iterrows():
         stationid = index_row[1]
-        latitude = None
-        longitude = None
-        kommune = None
-        vannforekomst = None
-        try:
-            point = point_df.loc[point_df["StationId"] == stationid].iloc[0]
-            latitude = point["Latitude"]
-            longitude = point["Longitude"]
+        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
+        latitude = point["Latitude"]
+        longitude = point["Longitude"]
 
-            kommune = callGeoserverQueryKommuneF(latitude, longitude)
-            vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_kyst_f", latitude, longitude)
-        except IndexError:
-            print(str(stationid) + " mangler i StationPoint")
-        okoregion = ""
-        vanntype = ""
-        nasj_vanntype = ""
-        if not vannforekomst is None:
-            try:
-                vannett_row = vannett_df.loc[vannett_df["VannforekomstID"] == vannforekomst].iloc[0]
-                if not vannett_row.empty:
-                    okoregion = vannett_row["Økoregion"]
-                    vanntype = vannett_row["Vanntype"]
-                    nasj_vanntype = vannett_row["Nasjonal vanntype"]
-            except IndexError:
-                print(vannforekomst + " mangler i Vann-nett-kyst.xlsx")
+        kommune = callGeoserverQueryKommuneF(latitude, longitude)
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_kystvannforekomster_f", latitude, longitude)
+        vannforekomstID = None
+        okoregion = None
+        vanntype = None
+        nasj_vanntype = None
+        if vannforekomst is not None:
+            vannforekomstID = vannforekomst["vannforekomstid"]
+            okoregion = vannforekomst["okoregion"]
+            vanntype = vannforekomst["vanntype"]
+            nasj_vanntype = vannforekomst["nasjonalvanntype"]
 
         sampledate = str(index_row[4])[0:10]
 
@@ -234,84 +228,68 @@ def rewriteNIVA_Hardbunn():
             data_rows.append({"Latitude": latitude,
                           "Longitude": longitude,
                           "Date": sampledate,
-                          "MSMDI": index_row[7],
-                          "MSMDI1": index_row[8],
-                          "MSMDI2": index_row[9],
-                          "MSMDI3": index_row[10],
-                          "RSLA": index_row[13],
-                          "RSLA1": index_row[14],
-                          "RSLA2": index_row[15],
-                          "RSLA3": index_row[16],
-                          "RSL4": index_row[11],
-                          "RSL5": index_row[12],
+                          "MSMDI1": index_row[7],
+                          "MSMDI2": index_row[8],
+                          "MSMDI3": index_row[9],
+                          "RSL4": index_row[10],
+                          "RSLA1": index_row[11],
+                          "RSLA2": index_row[12],
+                          "RSLA3": index_row[13],
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst,
+                          "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
                           "Vanntype": vanntype,
                           "EQR_Type": nasj_vanntype,
                           "Station_id": stationid})
 
     out_df = pd.DataFrame(data_rows,
-                          columns=["Latitude", "Longitude", "Date", "MSMDI", "MSMDI1", "MSMDI2", "MSMDI3",
-                                   "RSLA", "RSLA1", "RSLA2", "RSLA3", "RSL4", "RSL5", "Kommunenr",
+                          columns=["Latitude", "Longitude", "Date", "MSMDI1", "MSMDI2", "MSMDI3",
+                                   "RSL4", "RSLA1", "RSLA2", "RSLA3", "Kommunenr",
                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
 
-    writer = ExcelWriter(f"{ROOT_PATH}Hardbunn-niva.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
+    with ExcelWriter(f"{ROOT_PATH}Hardbunn-niva.xlsx") as writer:
+        out_df.to_excel(writer)
+
 
 def rewriteNIVA_MarinPlankton():
-    indexes_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "WaterChemistry", header=1)
+    indexes_df = pd.read_excel(f"{ROOT_PATH}Nivabase-marin-klfa.xlsx", "Water chemistry")
 
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-plankton.xlsx", "StationPoint")
-
-    vannett_df = pd.read_excel(f"{ROOT_PATH}Vann-nett-kyst.xlsx", "Sheet1")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-marin-klfa.xlsx", "Stations")
 
     data_rows = []
     for idx, index_row in indexes_df.iterrows():
-        stationid = index_row[2]
-        latitude = None
-        longitude = None
-        kommune = None
-        vannforekomst = None
-        try:
-            point = point_df.loc[point_df["StationId"] == stationid].iloc[0]
+        stationid = index_row["Station id"]
+        sampledate = str(index_row["Sample date"])[0:10]
+        depth1 = index_row["Depth 1"]
+        depth2 = index_row["Depth 2"]
+        # Check for dublett on StationId / Date before appending.
+        if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate
+               and r["Depth1"] == depth1 and r["Depth2"] == depth2]) == 0:
+
+            point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
             latitude = point["Latitude"]
             longitude = point["Longitude"]
 
             kommune = callGeoserverQueryKommuneF(latitude, longitude)
-            vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_kyst_f", latitude, longitude)
-        except IndexError:
-            print(str(stationid) + " mangler i StationPoint")
-        okoregion = ""
-        vanntype = ""
-        nasj_vanntype = ""
-        if not vannforekomst is None:
-            try:
-                vannett_row = vannett_df.loc[vannett_df["VannforekomstID"] == vannforekomst].iloc[0]
-                if not vannett_row.empty:
-                    okoregion = vannett_row["Økoregion"]
-                    vanntype = vannett_row["Vanntype"]
-                    nasj_vanntype = vannett_row["Nasjonal vanntype"]
-            except IndexError:
-                print(vannforekomst + " mangler i Vann-nett-kyst.xlsx")
-
-        sampledate = str(index_row[5])[0:10]
-        depth1 = index_row[6]
-        depth2 = index_row[7]
-
-        # Check for dublett on StationId / Date before appending.
-        if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate
-               and r["Depth1"] == depth1 and r["Depth2"] == depth2]) == 0:
+            vannforekomst = callGeoserverQueryVannforekomst("miljodir_kystvannforekomster_f", latitude, longitude)
+            vannforekomstID = None
+            okoregion = None
+            vanntype = None
+            nasj_vanntype = None
+            if vannforekomst is not None:
+                vannforekomstID = vannforekomst["vannforekomstid"]
+                okoregion = vannforekomst["okoregion"]
+                vanntype = vannforekomst["vanntype"]
+                nasj_vanntype = vannforekomst["nasjonalvanntype"]
 
             data_rows.append({"Latitude": latitude,
                           "Longitude": longitude,
                           "Date": sampledate,
                           "Depth1": depth1,
                           "Depth2": depth2,
-                          "ChlA": index_row[8],
+                          "ChlA": index_row["KlfA\nµg/l"],
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst,
+                          "VannforekomstID": vannforekomstID,
                           "Økoregion": okoregion,
                           "Vanntype": vanntype,
                           "EQR_Type": nasj_vanntype,
@@ -322,39 +300,49 @@ def rewriteNIVA_MarinPlankton():
                                    "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type",
                                    "Station_id"])
 
-    writer = ExcelWriter(f"{ROOT_PATH}Marin-Plankton-niva.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
-
+    with ExcelWriter(f"{ROOT_PATH}Marin-Plankton-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
 
 def rewriteNIVA_ASPT():
     aspt_df = pd.read_excel(f"{ROOT_PATH}Nivabase-bunndyr.xlsx", "BunndyrVariables")
-    attribute_df = pd.read_excel(f"{ROOT_PATH}Nivabase-bunndyr.xlsx", "StationAttribute")
-    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-bunndyr.xlsx", "StationPoint")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-bunndyr.xlsx", "Stations")
 
     data_rows = []
     for idx, aspt_row in aspt_df.iterrows():
-        stationid = aspt_row[2]
-        attribute_row = attribute_df.loc[attribute_df["StationId"] == stationid].iloc[0]
+        stationid = aspt_row["StationId"]
+        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
+        latitude = point["Latitude"]
+        longitude = point["Longitude"]
 
-        point_row = point_df.loc[point_df["StationId"] == stationid].iloc[0]
-        latitude = point_row["Latitude"]
-        longitude = point_row["Longitude"]
         kommune = callGeoserverQueryKommuneF(latitude, longitude)
-        vannforekomst = callGeoserverQueryVannforekomst("nve_vannforekomst_l", latitude, longitude)
+        vannforekomst = callGeoserverQueryVannforekomst("miljodir_elvevannforekomster_l", latitude, longitude)
+        vannforekomstID = None
+        okoregion = None
+        vanntype = None
+        nasj_vanntype = None
+        if vannforekomst is not None:
+            vannforekomstID = vannforekomst["vannforekomstid"]
+            okoregion = vannforekomst["okoregion"]
+            vanntype = vannforekomst["vanntype"]
+            nasj_vanntype = vannforekomst["nasjonalvanntype"]
 
         data_rows.append({"Latitude": latitude,
                           "Longitude": longitude,
-                          "Date": str(aspt_row[5])[0:10],
-                          "ASPT": aspt_row[6],
+                          "Date": str(aspt_row["SampleDate"])[0:10],
+                          "ASPT": aspt_row["ASPT"],
                           "Kommunenr": kommune,
-                          "VannforekomstID": vannforekomst})
+                          "VannforekomstID": vannforekomstID,
+                          "Økoregion": okoregion,
+                          "Vanntype": vanntype,
+                          "EQR_Type": nasj_vanntype,
+                          "Station_id": stationid})
 
-    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "ASPT", "Kommunenr", "VannforekomstID"])
-    writer = ExcelWriter(f"{ROOT_PATH}Bunndyr.xlsx")
-    out_df.to_excel(writer)
-    writer.save()
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "ASPT", "Kommunenr", "VannforekomstID", 
+                                              "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
+    
+    with ExcelWriter(f"{ROOT_PATH}Bunndyr-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
 
 def callVannmiljoLokalitet(code):

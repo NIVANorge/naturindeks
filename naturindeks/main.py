@@ -646,6 +646,8 @@ def rewriteVannmiljo_Marin():
             "Latitude": meta["Latitude"],
             "Longitude": meta["Longitude"],
             "Date": vannmiljo_row["Tid_provetak"][0:10],
+            "Depth1": vannmiljo_row["Ovre_dyp"],
+            "Depth2": vannmiljo_row["Nedre_dyp"],
             "Parameter": vannmiljo_row["Parameter_id"],
             "Verdi": vannmiljo_row["Verdi"],
             "Kommunenr": meta["Kommunenr"],
@@ -656,7 +658,7 @@ def rewriteVannmiljo_Marin():
             "WC_Value_id": nivabaseId
         })
 
-    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "Parameter", "Verdi",
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "Depth1", "Depth2", "Parameter", "Verdi",
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
                                               "EQR_Type", "WC_Value_id"])
 
@@ -924,6 +926,56 @@ def mergeHardbunn():
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
 
     with ExcelWriter(f"{ROOT_PATH}Naturindeks-hardbunn.xlsx") as writer:
+        out_df.to_excel(writer)
+
+
+def mergeMarinPlankton():
+    niva_df = pd.read_excel(f"{ROOT_PATH}Marin-Plankton-niva.xlsx")
+    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}Vannmiljo-Marin.xlsx")
+    for idx, vannmiljo_row in vannmiljo_df.iterrows():
+        klfa = None
+        parameter = vannmiljo_row["Parameter"]
+
+        if parameter == "KLFA":
+            klfa = vannmiljo_row["Verdi"]
+
+        if vannmiljo_row["VannforekomstID"] is not None:
+            match_df = niva_df[(niva_df["VannforekomstID"] == vannmiljo_row["VannforekomstID"])
+                               & (niva_df["Date"] == vannmiljo_row["Date"])
+                               & (niva_df["Depth1"] == vannmiljo_row["Depth1"])
+                               & (niva_df["Depth2"] == vannmiljo_row["Depth2"])]
+            if len(match_df) == 0:
+                new_df = pd.DataFrame({
+                    "Latitude": [vannmiljo_row["Latitude"]],
+                    "Longitude": [vannmiljo_row["Longitude"]],
+                    "Date": [vannmiljo_row["Date"]],
+                    "Depth1": [vannmiljo_row["Depth1"]],
+                    "Depth2": [vannmiljo_row["Depth2"]],
+                    "ChlA": [klfa],
+                    "Kommunenr": [vannmiljo_row["Kommunenr"]],
+                    "VannforekomstID": [vannmiljo_row["VannforekomstID"]],
+                    "Økoregion": [vannmiljo_row["Økoregion"]],
+                    "Vanntype": [vannmiljo_row["Vanntype"]],
+                    "EQR_Type": [vannmiljo_row["EQR_Type"]]
+                })
+                niva_df = pd.concat([niva_df, new_df], axis=0, ignore_index=True)
+            else:
+                for idx2, match_row in match_df.iterrows():
+                    if match_row[parameter] is None:
+                        match_row[parameter] = vannmiljo_row["Verdi"]
+                    else:
+                        if not match_row[parameter] == vannmiljo_row["Verdi"]:
+                            try:
+                                print("Sjekk parameter:" + parameter + " på vannforekomst:" \
+                                      + match_row["VannforekomstID"] + " på dato:" + str(match_row["Date"]))
+                            except:
+                                print("Huff")
+
+
+    out_df = pd.DataFrame(niva_df, columns=["Latitude", "Longitude", "Date", "Depth1", "DeptH2", "ChlA", "Kommunenr",
+                                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
+
+    with ExcelWriter(f"{ROOT_PATH}Naturindeks-marin.xlsx") as writer:
         out_df.to_excel(writer)
 
 

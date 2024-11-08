@@ -32,6 +32,7 @@ merge-plankton = "naturindeks.main:mergePlankton"
 merge-begroing = "naturindeks.main:mergeBegroing"
 merge-blotbunn = "naturindeks.main:mergeBlotbunn"
 merge-hardbunn = "naturindeks.main:mergeHardbunn"
+merge-marin = "naturindeks.main:mergeMarinPlankton"
 
 [tool.poetry.group.dev.dependencies]
 black = "^23.1.0"

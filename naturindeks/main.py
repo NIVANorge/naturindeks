@@ -595,6 +595,74 @@ def rewriteVannmiljo_Hardbunn():
         out_df.to_excel(writer)
 
 
+def rewriteVannmiljo_Marin():
+    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}WaterRegistrationExport-marin.xlsx", "VannmiljoEksport")
+    data_rows = []
+    vannlok_set = {}
+    for idx, vannmiljo_row in vannmiljo_df.iterrows():
+        vannlok_code = vannmiljo_row["Vannlok_kode"]
+        if vannlok_code not in vannlok_set:
+            kommune = None
+            latitude = None
+            longitude = None
+            okoregion = None
+            vanntype = None
+            nasj_vanntype = None
+            vannforekomstID = None
+            vannlok = callVannmiljoLokalitet(vannmiljo_row["Vannlok_kode"])
+            if vannlok is not None:
+                latitude = vannlok["geometry"]["y"]
+                longitude = vannlok["geometry"]["x"]
+                kommune = callGeoserverQueryKommuneF(latitude, longitude)
+                vannforekomst = callGeoserverQueryVannforekomst("miljodir_kystvannforekomster_f", \
+                                                                latitude, longitude)
+                if vannforekomst is not None:
+                    vannforekomstID = vannforekomst["vannforekomstid"]
+                    okoregion = vannforekomst["okoregion"]
+                    vanntype = vannforekomst["vanntype"]
+                    nasj_vanntype = vannforekomst["nasjonalvanntype"]
+            meta = {
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Kommunenr": kommune,
+                "VannforekomstID": vannforekomstID,
+                "Økoregion": okoregion,
+                "Vanntype": vanntype,
+                "EQR_Type": nasj_vanntype
+            }
+            vannlok_set[vannlok_code] = meta
+        else:
+            meta = vannlok_set[vannlok_code]
+
+        nivabaseId = ""
+        lokalId = str(vannmiljo_row["ID_lokal"])
+        if len(lokalId) > 8 and lokalId[:8] == "NIVA@WC@":
+            try:
+                nivabaseId = int(lokalId[8:])
+            except:
+                print("Dette var ikke helt riktig NIVA-id: " + lokalId)
+
+        data_rows.append({
+            "Latitude": meta["Latitude"],
+            "Longitude": meta["Longitude"],
+            "Date": vannmiljo_row["Tid_provetak"][0:10],
+            "Parameter": vannmiljo_row["Parameter_id"],
+            "Verdi": vannmiljo_row["Verdi"],
+            "Kommunenr": meta["Kommunenr"],
+            "VannforekomstID": meta["VannforekomstID"],
+            "Økoregion": meta["Økoregion"],
+            "Vanntype": meta["Vanntype"],
+            "EQR_Type": meta["EQR_Type"],
+            "WC_Value_id": nivabaseId
+        })
+
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "Parameter", "Verdi",
+                                              "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
+                                              "EQR_Type", "WC_Value_id"])
+
+    with ExcelWriter(f"{ROOT_PATH}Vannmiljo-Marin.xlsx") as writer:
+        out_df.to_excel(writer)
+
 def mergePlankton():
     vannmiljo_df = pd.read_excel(f"{ROOT_PATH}Vannmiljo-Plankton.xlsx")
     niva_df = pd.read_excel(f"{ROOT_PATH}Plankton-niva.xlsx")

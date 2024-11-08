@@ -7,9 +7,11 @@ Primarly intended to run within Jupyterhub.
 
 We're using Poetry. To install aquamonitor do the following:
 ```
+pip install poetry
 poetry shell
 pip install git+https://github.com/NIVANorge/AquaMonitor-Python.git
 exit
+poetry install
 ```
 
 ## Export Vannmiljø

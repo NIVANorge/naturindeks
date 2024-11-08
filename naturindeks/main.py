@@ -6,6 +6,7 @@ import pandas as pd
 from pandas import ExcelWriter
 
 ROOT_PATH = "data/"
+WHERE_PERIOD = "sample_date>=01.01.2020"
 
 req = requests.Session()
 retries = Retry(total=5, backoff_factor=0.1)
@@ -14,7 +15,7 @@ req.mount("https://", HTTPAdapter(max_retries=retries))
 
 def downloadNIVA_PTI():
     # PTI -> plankton.parameter_id = 7
-    am.Query(where="Plankton.parameter_id=7 and sample_date>=01.01.2020") \
+    am.Query(where=f"Plankton.parameter_id=7 and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-plankton.xlsx") \
         .download(path=ROOT_PATH)
 
@@ -24,31 +25,31 @@ def downloadNIVA_Begroing():
     # AIP -> begroing.parameter_id = 2
     # HBI2 -> begroing.parameter_id = 64
 
-    am.Query(where="Begroing.parameter_id in (1,2,64) and sample_date>=01.01.2020") \
+    am.Query(where=f"Begroing.parameter_id in (1,2,64) and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-begroing.xlsx") \
         .download(path=ROOT_PATH)
 
 
 def downloadNIVA_ASPT():
-    am.Query(where="Bunndyr.parameter_id = 1 and sample_date>=01.01.2020") \
+    am.Query(where=f"Bunndyr.parameter_id = 1 and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-bunndyr.xlsx") \
         .download(path=ROOT_PATH)
 
 
 def downloadNIVA_Blotbunn():
-    am.Query(where="Blotbunn.parameter_id in (111,26,15,11,116) and sample_date>=01.01.2020") \
+    am.Query(where=f"Blotbunn.parameter_id in (111,26,15,11,116) and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-blotbunn.xlsx") \
         .download(path=ROOT_PATH)
 
 
 def downloadNIVA_Hardbunn():
-    am.Query(where="Hardbunn.parameter_id in (13,189,190,191,187,188,184,185,186,113) and sample_date>=01.01.2020") \
+    am.Query(where=f"Hardbunn.parameter_id in (13,189,190,191,187,188,184,185,186,113) and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-hardbunn.xlsx") \
         .download(path=ROOT_PATH)
 
 
 def downloadNIVA_MarinChla():
-    am.Query(where="station_type_id=3 and Water.parameter_id = 261 and sample_date>=01.01.2020") \
+    am.Query(where=f"station_type_id=3 and Water.parameter_id = 261 and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-marin-klfa.xlsx") \
         .download(path=ROOT_PATH)
 

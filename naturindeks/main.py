@@ -961,10 +961,10 @@ def mergeMarinPlankton():
                 niva_df = pd.concat([niva_df, new_df], axis=0, ignore_index=True)
             else:
                 for idx2, match_row in match_df.iterrows():
-                    if match_row[parameter] is None:
-                        match_row[parameter] = vannmiljo_row["Verdi"]
+                    if match_row["ChlA"] is None:
+                        match_row["ChlA"] = vannmiljo_row["Verdi"]
                     else:
-                        if not match_row[parameter] == vannmiljo_row["Verdi"]:
+                        if not match_row["ChlA"] == vannmiljo_row["Verdi"]:
                             try:
                                 print("Sjekk parameter:" + parameter + " på vannforekomst:" \
                                       + match_row["VannforekomstID"] + " på dato:" + str(match_row["Date"]))

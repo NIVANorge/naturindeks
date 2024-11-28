@@ -5,7 +5,7 @@ import json
 import pandas as pd
 from pandas import ExcelWriter
 
-ROOT_PATH = "data/"
+ROOT_PATH = "data/2020-/"
 WHERE_PERIOD = "sample_date>=01.01.2020"
 
 req = requests.Session()
@@ -51,6 +51,11 @@ def downloadNIVA_Hardbunn():
 def downloadNIVA_MarinChla():
     am.Query(where=f"station_type_id=3 and Water.parameter_id = 261 and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-marin-klfa.xlsx") \
+        .download(path=ROOT_PATH)
+    
+def downloadNIVA_Vannplante():
+    am.Query(where=f"Vannplanter.parameter_id = 2 and { WHERE_PERIOD }") \
+        .export(format="excel", filename="Nivabase-vannplante.xlsx") \
         .download(path=ROOT_PATH)
 
 
@@ -349,6 +354,50 @@ def rewriteNIVA_Bunndyr():
         out_df.to_excel(writer)
 
 
+def rewriteNIVA_Vannplante():
+    tic_df = pd.read_excel(f"{ROOT_PATH}Nivabase-vannplante.xlsx", "Vannplante parameters")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-vannplante.xlsx", "Stations")
+
+    data_rows = []
+    for idx, row in tic_df.iterrows():
+        stationid = row["Station id"]
+        sampledate = str(row["Sample date"])[0:10]
+
+        # Check for dublett on StationId / Date before appending.
+        if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate]) == 0:
+            point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
+            latitude = point["Latitude"]
+            longitude = point["Longitude"]
+            kommune = callGeoserverQueryKommuneF(latitude, longitude)
+            vannforekomst = callGeoserverQueryVannforekomst("miljodir_innsjovannforekomster_f", latitude, longitude)
+            vannforekomstID = None
+            okoregion = None
+            vanntype = None
+            nasj_vanntype = None
+            if vannforekomst is not None:
+                vannforekomstID = vannforekomst["vannforekomstid"]
+                okoregion = vannforekomst["okoregion"]
+                vanntype = vannforekomst["vanntype"]
+                nasj_vanntype = vannforekomst["nasjonalvanntype"]
+
+            data_rows.append({"Latitude": latitude,
+                              "Longitude": longitude,
+                              "Date": sampledate,
+                              "TIC": row["TIc "],
+                              "Kommunenr": kommune,
+                              "VannforekomstID": vannforekomstID,
+                              "Økoregion": okoregion,
+                              "Vanntype": vanntype,
+                              "EQR_Type": nasj_vanntype,
+                              "Station_id": stationid})
+
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "TIC", "Kommunenr", "VannforekomstID", 
+                                              "Økoregion", "Vanntype", "EQR_Type", "Station_id"])
+    
+    with ExcelWriter(f"{ROOT_PATH}Vannplante-niva.xlsx") as writer:
+        out_df.to_excel(writer)
+
+
 
 def rewriteVannmiljo_PTI():
     vannmiljo_df = pd.read_excel(f"{ROOT_PATH}WaterRegistrationExport-plankton.xlsx", "VannmiljoEksport")
@@ -487,6 +536,54 @@ def rewriteVannmiljo_Bunndyr():
                                               "EQR_Type", "Bd_parameter_values_id"])
 
     with ExcelWriter(f"{ROOT_PATH}Vannmiljo-Bunndyr.xlsx") as writer:
+        out_df.to_excel(writer)
+
+
+def rewriteVannmiljo_Vannplante():
+    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}WaterRegistrationExport-vannplante.xlsx", "VannmiljoEksport")
+    data_rows = []
+    for idx, vannmiljo_row in vannmiljo_df.iterrows():
+        vannlok = callVannmiljoLokalitet(vannmiljo_row["Vannlok_kode"])
+        if vannlok is not None:
+            latitude = vannlok["geometry"]["y"]
+            longitude = vannlok["geometry"]["x"]
+            kommune = callGeoserverQueryKommuneF(latitude, longitude)
+            vannforekomst = callGeoserverQueryVannforekomst("miljodir_innsjovannforekomster_f", \
+                                                            latitude, longitude)
+            okoregion = None
+            vanntype = None
+            nasj_vanntype = None
+            vannforekomstID = None
+            if vannforekomst is not None:
+                vannforekomstID = vannforekomst["vannforekomstid"]
+                okoregion = vannforekomst["okoregion"]
+                vanntype = vannforekomst["vanntype"]
+                nasj_vanntype = vannforekomst["nasjonalvanntype"]
+
+            nivabaseId = ""
+            lokalId = str(vannmiljo_row["ID_lokal"])
+            if len(lokalId) > 9 and lokalId[:9] == "NIVA@VPP@":
+                nivabaseId = int(lokalId[9:])
+
+            data_rows.append({
+                "Latitude": latitude,
+                "Longitude": longitude,
+                "Date": vannmiljo_row["Tid_provetak"][0:10],
+                "Parameter": vannmiljo_row["Parameter_id"],
+                "Verdi": vannmiljo_row["Verdi"],
+                "Kommunenr": kommune,
+                "VannforekomstID": vannforekomstID,
+                "Økoregion": okoregion,
+                "Vanntype": vanntype,
+                "EQR_Type": nasj_vanntype,
+                "Vpl_parameter_values_id": nivabaseId
+            })
+
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "Parameter", "Verdi",
+                                              "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
+                                              "EQR_Type", "Bd_parameter_values_id"])
+
+    with ExcelWriter(f"{ROOT_PATH}Vannmiljo-Vannplante.xlsx") as writer:
         out_df.to_excel(writer)
 
 
@@ -978,6 +1075,51 @@ def mergeMarinPlankton():
     with ExcelWriter(f"{ROOT_PATH}Naturindeks-marin.xlsx") as writer:
         out_df.to_excel(writer)
 
+
+def mergeVannplante():
+    niva_df = pd.read_excel(f"{ROOT_PATH}Vannplante-niva.xlsx")
+    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}Vannmiljo-Vannplante.xlsx")
+    for idx, vannmiljo_row in vannmiljo_df.iterrows():
+        tic = None
+        parameter = vannmiljo_row["Parameter"]
+
+        if parameter == "TIANTL":
+            tic = vannmiljo_row["Verdi"]
+
+        if vannmiljo_row["VannforekomstID"] is not None:
+            match_df = niva_df[(niva_df["VannforekomstID"] == vannmiljo_row["VannforekomstID"])
+                               & (niva_df["Date"] == vannmiljo_row["Date"])]
+            if len(match_df) == 0:
+                new_df = pd.DataFrame({
+                    "Latitude": [vannmiljo_row["Latitude"]],
+                    "Longitude": [vannmiljo_row["Longitude"]],
+                    "Date": [vannmiljo_row["Date"]],
+                    "TIC": [tic],
+                    "Kommunenr": [vannmiljo_row["Kommunenr"]],
+                    "VannforekomstID": [vannmiljo_row["VannforekomstID"]],
+                    "Økoregion": [vannmiljo_row["Økoregion"]],
+                    "Vanntype": [vannmiljo_row["Vanntype"]],
+                    "EQR_Type": [vannmiljo_row["EQR_Type"]]
+                })
+                niva_df = pd.concat([niva_df, new_df], axis=0, ignore_index=True)
+            else:
+                for idx2, match_row in match_df.iterrows():
+                    if match_row["TIC"] is None:
+                        match_row["TIC"] = vannmiljo_row["Verdi"]
+                    else:
+                        if not match_row["TIC"] == vannmiljo_row["Verdi"]:
+                            try:
+                                print("Sjekk parameter:" + parameter + " på vannforekomst:" \
+                                      + match_row["VannforekomstID"] + " på dato:" + str(match_row["Date"]))
+                            except:
+                                print("Huff")
+
+
+    out_df = pd.DataFrame(niva_df, columns=["Latitude", "Longitude", "Date", "TIC", "Kommunenr",
+                                                    "VannforekomstID", "Økoregion", "Vanntype", "EQR_Type"])
+
+    with ExcelWriter(f"{ROOT_PATH}Naturindeks-vannplante.xlsx") as writer:
+        out_df.to_excel(writer)
 
 def rewriteKommuneVannforekomst(resultat_fil, kommune_fil, vann_nett_fil):
     kommuneVannforekomst_df = pd.read_excel(f"{ROOT_PATH}{kommune_fil}")  # Fila kommune_vannforekomst_f kommer fra en spatial join operasjon i QGIS(??).

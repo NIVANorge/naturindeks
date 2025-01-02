@@ -18,11 +18,12 @@ Sys.setlocale("LC_ALL", "no_NO.UTF-8")
 ################################################################################
 ### list files
 ################################################################################
-
-x.list.dirs = c("data/input/blåskjell/2020/",
-                "data/input/blåskjell/2021/",
-                "data/input/blåskjell/2022/",
-                "data/input/blåskjell/2023/")
+x.root.path = "C:\\Users\\rbr\\NIVA\\210200 - Miljøgifter i kystområdene 2021-2025 - Documents"
+x.list.dirs = c("2020\\opparbeiding\\Blåskjell\\registrertBBE",
+                "2021\\opparbeiding\\blåskjell\\Sørfjorden2021_17147 (ARU)",
+                "2021\\opparbeiding\\blåskjell",
+                "2022\\opparbeiding\\blåskjell\\skjema godkjent",
+                "2023\\Opparbeiding\\Blåskjell\\registrert_BBE")
 
 
 
@@ -51,14 +52,14 @@ x.data.frame.length = data.frame()
 
 for (i.dir in 1:length(x.list.dirs)){
   
-  
-  x.list.files = list.files(x.list.dirs[i.dir],
+  x.dir.path = paste(x.root.path, x.list.dirs[i.dir], sep="\\")
+  x.list.files = list.files(x.dir.path,
                             pattern = ".xlsx$", full.names = F) %>% sort()
   
   
   
   for (i.file in 1:length(x.list.files)){
-    x.path = paste(x.list.dirs[i.dir], x.list.files[i.file], sep = "")
+    x.path = paste(x.dir.path, x.list.files[i.file], sep = "\\")
     print(x.path)
     
     x.file.info.station = read.xlsx(x.path,
@@ -144,7 +145,7 @@ for (i.dir in 1:length(x.list.dirs)){
                                                station = x.file.info.station$X2[2],
                                                date_collected = convertToDateTime(x.file.info.station$X2[3], origin = "1900-01-01") %>%  as_date(),
                                                sample_no = x.file.info.weight.num[i.sample],
-                                               filename = paste(x.list.dirs[i.dir], x.list.files[i.file], sep = "")
+                                               filename = x.path
                                                )
       
         # print(x.data.next.weight)
@@ -185,7 +186,7 @@ for (i.dir in 1:length(x.list.dirs)){
                   station = x.file.info.station$X2[2],
                   date_collected = convertToDateTime(x.file.info.station$X2[3], origin = "1900-01-01") %>%  as_date(),
                   sample_no = x.file.info.weight.num[i.sample],
-                  filename = paste(x.list.dirs[i.dir], x.list.files[i.file], sep = "")
+                  filename = x.path
         )
       
       # print(x.file.stats)
@@ -221,15 +222,3 @@ writeData(wb = wb,
           ) 
 
 saveWorkbook(wb, "data/output/mussles_weights_lengths.xlsx", overwrite = TRUE)
-
-
-
-
-
-
-
-
-
-
-
-

@@ -611,7 +611,9 @@ def rewriteVannmiljo_Blotbunn():
 
             nivabaseId = ""
             lokalId = str(vannmiljo_row["ID_lokal"])
-            grabb = str(vannmiljo_row["Provenr"])
+            grabb = ""
+            if not pd.isna(vannmiljo_row["Provenr"]):
+                grabb = str(vannmiljo_row["Provenr"])
             if len(lokalId) > 8 and lokalId[:8] == "NIVA@BB@":
                 try:
                     nivabaseId = int(lokalId[8:])
@@ -637,7 +639,7 @@ def rewriteVannmiljo_Blotbunn():
                                               "Kommunenr", "VannforekomstID", "Økoregion", "Vanntype",
                                               "EQR_Type", "BB_Index_Values_id"])
 
-    with ExcelWriter(f"{ROOT_PATH}Vannmiljo-Bløtbunn.xlsx") as writer:
+    with ExcelWriter(f"{ROOT_PATH}Vannmiljo-Blotbunn.xlsx") as writer:
         out_df.to_excel(writer)
 
 
@@ -887,7 +889,7 @@ def mergeBunndyr():
 
 def mergeBlotbunn():
     niva_df = pd.read_excel(f"{ROOT_PATH}Blotbunn-niva.xlsx")
-    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}Vannmiljo-Bløtbunn.xlsx")
+    vannmiljo_df = pd.read_excel(f"{ROOT_PATH}Vannmiljo-Blotbunn.xlsx")
     for idx, vannmiljo_row in vannmiljo_df.iterrows():
         es100 = None
         h = None
@@ -911,17 +913,20 @@ def mergeBlotbunn():
         elif parameter == "ISI_2012":
             isi = vannmiljo_row["Verdi"]
             field = "ISI"
+        if not pd.isna(vannmiljo_row["VannforekomstID"]) and field is not None:
+            grabb = ""
+            if not pd.isna(vannmiljo_row["Grabb"]):
+                grabb = vannmiljo_row["Grabb"]
 
-        if not pd.isna(vannmiljo_row["VannforekomstID"]):
             match_df = niva_df[(niva_df["VannforekomstID"] == vannmiljo_row["VannforekomstID"])
                                & (niva_df["Date"] == vannmiljo_row["Date"])
-                               & (niva_df["Grabb"] == vannmiljo_row["Grabb"])]
+                               & (niva_df["Grabb"] == grabb)]
             if len(match_df) == 0:
                 new_df = pd.DataFrame({
                     "Latitude": [vannmiljo_row["Latitude"]],
                     "Longitude": [vannmiljo_row["Longitude"]],
                     "Date": [vannmiljo_row["Date"]],
-                    "Grabb": [vannmiljo_row["Grabb"]],
+                    "Grabb": [grabb],
                     "ES100": [es100],
                     "H": [h],
                     "ISI": [isi],
@@ -933,7 +938,7 @@ def mergeBlotbunn():
                     "Vanntype": [vannmiljo_row["Vanntype"]],
                     "EQR_Type": [vannmiljo_row["EQR_Type"]]
                 })
-                pd.concat([niva_df, new_df], axis=0, ignore_index=True)
+                niva_df = pd.concat([niva_df, new_df], axis=0, ignore_index=True)
             else:
                 for idx2, match_row in match_df.iterrows():
                     if pd.isna(match_row[field]):

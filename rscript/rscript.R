@@ -22,8 +22,7 @@ x.root.path = "C:\\Users\\rbr\\NIVA\\210200 - Miljøgifter i kystområdene 2021-
 x.list.dirs = c("2020\\opparbeiding\\Blåskjell\\registrertBBE",
                 "2021\\opparbeiding\\blåskjell\\Sørfjorden2021_17147 (ARU)",
                 "2021\\opparbeiding\\blåskjell",
-                "2022\\opparbeiding\\blåskjell\\skjema godkjent",
-                "2023\\Opparbeiding\\Blåskjell\\registrert_BBE")
+                "2022\\opparbeiding\\blåskjell\\skjema godkjent")
 
 
 
@@ -176,8 +175,7 @@ for (i.dir in 1:length(x.list.dirs)){
       
       x.file.stats = x.file.info.length %>% 
         mutate(sum_length_interval = mm * count) %>% 
-        group_by(mm_base) %>% 
-        summarize(sum_length_class = sum(sum_length_interval),
+        summarize(sum_length = sum(sum_length_interval),
                   sum_count = sum(count),
                   wm_length = weighted.mean(mm, w = count),
                   var_length = Hmisc::wtd.var(x = mm, weights = count),

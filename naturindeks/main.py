@@ -1198,7 +1198,7 @@ def callGeoserverQueryVannforekomst(layer, latitude, longitude):
     resp = req.get(url)
     print(f"Url: {url}\nResponse: {resp.text}")
     features = json.loads(resp.text)["features"]
-    if len(features) == 1:
+    if len(features) >= 1:
         return features[0]
     else:
         return None

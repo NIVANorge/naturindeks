@@ -3,7 +3,7 @@
 # Script for å kjøre scriptet analyses_neqr.Rmd i løkke for flere indikatorer 
 # Lagrer individuelle sammendrag i html-filer. 
 
-# Kommenter ut fllgende i analyses_neqr.Rmd:
+# Kommenter ut følgende i analyses_neqr.Rmd:
 
 #knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), 'Full_summaries/NQI1_yrContinous.html')) })
 #rm(list = ls()) 
@@ -13,7 +13,7 @@ rm(list = ls())
 
 
 for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell",
-  for (index in c("RSLA")){ #"blaaskjell",
+ # for (index in c("RSLA")){ #"blaaskjell",
     ind_names <- array(c("Naturindeks plankton innsjøer",
                        "Begroing eutrofierings indeks elver",
                        "Begroing elver forsurings indeks",

@@ -1,0 +1,119 @@
+---
+title: "Naturindeksen bløtbunn hav"
+author: "Kristina Øie Kvile, NIVA"
+date: '`r format(Sys.Date(), "%d %B %Y")`'
+output: 
+  html_document:
+    toc: true # Gir Table of Contents i starten av dokumentet
+    toc_depth: 2
+# Lagrer til html, kommenter ut dette når scriptet kjøres i løkke fra analyses_neqr.R:
+ # knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), 'Full_summaries/H_new.html')) })
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r settings, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE) # Fjerner beskjeder fra R i output
+
+# libraries
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(gridExtra) 
+
+options(dplyr.width = Inf) # Viser alle kolonner i table
+options(dplyr.print_max = 1e9)
+```
+
+R-script for å lese inn data for diversitet av bløtbunn hav (H'), beregne gjennomsnitt og standardavvik per region, og laste opp verdier til NI-databasen ved hjelp av NICalc.  
+
+
+# Databehandling
+
+Laster inn nye data og beregner gjennomsnitt og standardavvik per region.  
+
+```{r load_data, echo=FALSE, message=FALSE}
+
+installation2ocean <- data.frame(Installation = c("Regional01", "Regional02", "Regional03", "Regional04", "Regional05", "Regional06", "Regional07", "Regional08", "Regional09", "Regional10", "Regional11"),
+                                Region = c(rep("Nordsjøen",4), rep("Norskehavet",4), rep("Barentshavet",3)))
+
+# Laster inn data for 2021-2023 for alle regioner utenom Skagerrak:
+newdat <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/data_per_station_2021_2023.xlsx") 
+print(paste0("Størrelse datasett alle stasjoner 2021-2021: ",dim(newdat)[1]))
+
+# Filtrere på regionale stasjoner og koble til havområde
+newdat <- newdat %>% 
+  filter(grepl("Reg",Installation)) %>% 
+  left_join(installation2ocean)
+
+print(paste0("Størrelse datasett regionale stasjoner: ",dim(newdat)[1]))
+print(paste0("Data per økoregion: ",dim(newdat)[1]))
+newdat %>% count(Region)
+
+# Beregner gjennomsnitt per havområde
+dat <- newdat %>% 
+  group_by(Region) %>%
+  summarise(Mean = mean(`Average of Value`), Sd = sd(`Average of Value`))  %>%
+  mutate(Year = 2024)
+
+# Laster inn data for 2021-2023 for Skagerrak:
+skagerrak <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/Skagerrak_stations_2021_2023.xlsx")
+print(paste0("Størrelse datasett Skagerrak 2021-2023: ",dim(skagerrak)[1]))
+
+# Beregner gjennomsnitt og kombinerer med data for andre områder
+skagerrak <- skagerrak %>% 
+  summarise(Mean = mean(Verdi), Sd = sd(Verdi))  %>%
+  mutate(Year = 2024, Region = "Skagerrak")
+
+dat <- dat %>%
+  full_join(skagerrak)
+
+rm(newdat, skagerrak, installation2ocean)
+```
+
+Kombinerer nye og gamle data
+```{r comb_data, echo=FALSE, message=FALSE}
+
+olddat <- read_xlsx("../../01_Data/01_Indeksverdier/01_Indeksverdier_gamle/Naturindeks-bløtbunn hav (HGU).xlsx",sheet = 2)  %>%
+  rename("Mean" = "H'", "Sd" = "Stdev")
+
+dat <- olddat %>%
+  full_join(dat)
+
+write_xlsx(dat,path = "../../01_Data/01_Indeksverdier/02_Indeksverdier_nye/Naturindeks-bløtbunn-hav.xlsx")
+
+rm(olddat)
+```
+
+# Gjennomsnittlige verdier per havområde
+
+```{r plot_means, eval=TRUE, echo=FALSE, fig.cap = "Gjennomsnitts-prediksjoner per år og havområde"}
+# Plot for prediksjoner per år og kommunenr
+
+regions <- unique(dat$Region)
+years <- unique(dat$Year)
+
+plots <- list()
+
+for(i in 1:length(regions)){
+  # Trekker ut snitt for gitt region
+  dat_i <- dat %>% 
+    filter(Region == regions[i]) 
+  
+  # Definerer plot for gitt region
+  plots[[i]] <- ggplot(dat_i, aes(x = Year, y = Mean)) + 
+            geom_linerange(aes(x = Year, ymin = Mean-Sd, ymax = Mean+Sd), dat_i) +
+            geom_point(shape = 21, bg = "cyan", size = 3) +
+            theme_bw() +
+            ggtitle(regions[i]) +
+            xlim(range(years)) +
+            ylim(c(2,6))
+
+}
+
+grid.arrange(grobs = plots, ncol = ceiling(length(regions)/2))
+```
+
+# Opplasting til NI-databasen
+Predikerte NEQR-verdier blir lasta opp til NI-databasen på nett ved å bruke NIcalc-biblioteket i R. Laster først ned den eksisterende databasen for den gitte indikatoren, og oppdaterer så verdi (=prediksjon) og 'distrObjects' (beregnes av funksjoner i NIcalc). Verdier for kommuner og år vi ikke har prediksjoner for, men som finnes i databasen allerede, blir satt til NA.
+

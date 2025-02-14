@@ -1,0 +1,699 @@
+---
+params:
+   new_title: "My Title!"
+title: "`r params$new_title`"
+author: "Kristina Øie Kvile, NIVA"
+date: '`r format(Sys.Date(), "%d %B %Y")`'
+output: 
+  html_document:
+    toc: true # Gir Table of Contents i starten av dokumentet
+    toc_depth: 2
+# Lagrer til html, kommenter ut dette når scriptet kjøres i løkke fra analyses_neqr.R:
+# knit: (function(inputFile, encoding) { rmarkdown::render(inputFile, encoding = encoding, output_file = file.path(dirname(inputFile), 'Full_summaries/H_new.html')) })
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r settings, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE, message=FALSE) # Fjerner beskjeder fra R i output
+
+# libraries
+library(readxl)
+library(tidyverse)
+library(stringi)
+library(sf) # For kart
+library(gridExtra) # For kart
+library(cowplot) # For kart
+library(RColorBrewer)
+library(magrittr)
+sourceDir <- function(path, trace = TRUE, ...) {
+  for (nm in list.files(path, pattern = "[.][RrSsQq]$")) {
+    if(trace) cat(nm,":")
+    source(file.path(path, nm), ...)
+    if(trace) cat("\n")
+  }
+}
+sourceDir('R')
+
+options(dplyr.width = Inf) # Viser alle kolonner i table
+options(dplyr.print_max = 1e9)
+```
+
+R-script for å kjøre statistisk modell for NEQR-verdier og predikere NEQR-verdier for kommuner og år. NEQR-verdiene er beregnet fra Naturindeks-indikatorer i scriptet convert2neqr. Vi bruker filene Naturindeks-innsjo, Naturindeks-elver eller Natuindeks-kyst, med alle vannforekomster med informasjon om vanntype for det relevante habitatet, til å predikere NEQR-verdier som så lastes opp til NI-databasen ved hjelp av NICalc.  
+
+
+# Databehandling
+
+Laster inn data:  
+
+```{r load_data, echo=FALSE, message=FALSE}
+# Definererer alle NI-indikatorene:
+ind_names <- array(c("Naturindeks plankton innsjøer",
+                 "Begroing eutrofierings indeks elver",
+                 "Begroing elver forsurings indeks",
+                 "Vannplanter innsjøer",
+                 "Hardbunn vegetasjon algeindeks kyst",
+                 "Hardbunn vegetasjon nedre voksegrense kyst",
+                 "Bløtbunn artsmangfold fauna kyst",
+                 "Bløtbunn eutrofiindeks kyst",
+#                 "Blåskjell",
+                 "Planteplankton kyst"),dim=c(1,9),
+#dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
+dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","Chla")))
+
+#index <- "RSLA" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
+print(paste0("Indikator: ",ind_names[,index]," (",index,")"))
+
+# Laster inn fil med NEQR-verdier:
+ForcingData_name <- paste0("../../01_Data/03_NEQR/NEQR_",index,".xlsx")
+print(paste0("ForcingData: ",ForcingData_name))
+ForcingData  <- read_xlsx(ForcingData_name) %>% 
+  mutate(Year = as.numeric(Year)) # Setter år til kontinuerlig variabel
+
+# Definerer habitat (innsjø, elver eller kyst):
+if(index %in% c("PTI","TIc")){
+  habitat <- "innsjo"
+}else if(index %in% c("PIT","AIP")){
+  habitat <-"elver"
+}else if(index %in% c("RSLA","MSMDI","NQI1","H","blaaskjell","Chla")){
+  habitat <-"kyst"
+}
+
+print(paste0("Habitat: ",habitat))
+
+# Laster inn fil med liste over alle lokasjoner vi skal predikere for
+PredData_name  <- paste0("../../01_Data/02_Vannforekomster/Naturindeks-",habitat,".xlsx")
+print(paste0("PredData: ",PredData_name))
+PredData  <- read_xlsx(PredData_name)  %>% 
+  mutate(Kommunenr = as.numeric(Kommunenr)) #Setter kommunenr til numerisk
+ 
+# Tidsrom i data:
+print(paste0("Data tilgjengelig for følgende år: ",min(ForcingData$Year),"-",max(ForcingData$Year)))
+
+# Observasjoner per år i data:
+print("Observasjoner per år, ForcingData:")
+ForcingData %>% count(Year, sort = FALSE)
+
+# Plot av fordeling i NEQR-verdier i data:
+par(mfrow = c(1,1), mar = rep(2,4),oma = rep(2,4))
+hist(ForcingData$Response,main=paste0("Respons-variabel: ",index),xlab="",ylab="")
+
+print(paste0("Verdier >1 i data: ",round(100*length(ForcingData$Response[ForcingData$Response>1])/length(ForcingData$Response))," %"))
+print(paste0("Verdier = 1 i data: ",round(100*length(ForcingData$Response[ForcingData$Response==1])/length(ForcingData$Response))," %"))
+
+rm(ForcingData_name, PredData_name)
+
+```
+  
+Klargjør datasettet for den statistisk modellen ved å:  
+1. Splitte "vanntype" i sine delkomponenter ("typologifaktorer")   
+2. Slå sammen de to nordlige økoregionene for ferskvann
+  
+Dette gjøres for både ForcingDataog og PredData.  
+
+For oversikt over typologifaktorer for ferskvann, se side 22 i Klassifiseringsveileder 02:2018. For kyst, se: https://niva365.sharepoint.com/:x:/r/sites/projects/1555/Shared%20Documents/9_Omregning%20og%20konvertering/Typologikoder_kyst%20(HGU).xlsx?d=wd941b359f43b4002a04af4db1224c55a&csf=1&web=1&e=0LXc1h 
+
+```{r prepare_data, echo = FALSE}
+# Definerer variablene ("typologifaktorer") som går inn i vanntype:
+
+if(habitat == "innsjo"){
+variabler<-c("Vannkategori","Okoregion","Klimaregion","Storrelse","Kalk","Humus","Turbiditet","Dybde")
+} else if(habitat == "elver"){
+  variabler<-c("Vannkategori","Okoregion","Klimaregion","Storrelse","Kalk","Humus","Turbiditet")
+} else if(habitat == "kyst"){
+  variabler <- c("Vannkategori","Okoregion","Kysttype","Salinitet","Tidevann","Bolgeeksponering",
+               "Miksing_i_vannsoylen","Oppholdstid","Gjennomstromminghastighet")
+}
+
+# Løkke for å gjøre endringer i både ForcingData og PredData:
+for(datname in c("ForcingData","PredData")){
+  dat <- as.data.frame(get(datname)) # Henter dattasettet
+  
+  # Fjerne observasjoner med manglende vanntype eller vanntype satt til 0:
+  dat <- 
+    dat %>%
+    filter(!is.na(Vanntype)) %>%
+    filter(Vanntype!=0)
+  
+  # Splitter opp Vanntype i sine delkomponenter:
+  for(i in 1:length(variabler)){
+    dat[,variabler[i]] <- substr(dat$Vanntype,i,i)
+  }
+  
+  for(i in 1:length(variabler)){
+    dat[,variabler[i]] <- substr(dat$Vanntype,i,i)
+  }
+  
+  
+# Endrer koding for noen variabler:
+  if(habitat == "innsjo"){
+    dat<- dat %>%
+      mutate_at(variabler[c(5:8)], as.numeric)  %>% 
+      mutate(Kalk = na_if(Kalk,9))  %>%   #  Kalk=9 -> NA 
+      mutate(Kalk = replace(Kalk,Kalk%in%c(5:8),1)) %>% #Kalk=[5-8] -> 1
+      mutate(Humus = na_if(Humus,0)) %>%  # Humus=0 -> NA
+      mutate(Dybde = na_if(Dybde,0)) %>%   # Dybde=0 -> NA 
+      mutate(Dybde = replace(Dybde,Dybde==4,1)) %>% #Dybde=4 -> 1 (Svært grunn, estimert)
+      mutate(Dybde = replace(Dybde,Dybde==5,2))  %>% #Dybde=5 -> 2   (Grunn, estimert)
+      mutate(Dybde = replace(Dybde,Dybde==6,3)) #Dybde=6 -> 4   (Dyp, estimert)
+    
+    }
+
+  if(habitat == "elver"){
+     dat<- dat %>% 
+       mutate_at(variabler[c(4:7)], as.numeric)  %>% 
+       mutate(Kalk = na_if(Kalk,9))  %>%   #  Kalk=9 -> NA 
+       mutate(Kalk = replace(Kalk,Kalk%in%c(5:8),1)) %>% #Kalk=[5-8] -> 1
+       mutate(Humus = na_if(Humus,0)) # Humus=0 -> NA
+  }
+  
+  if(habitat == "kyst"){ #0 = NA for flere variablre
+    dat<- 
+      dat %>% 
+      mutate_at(variabler[c(3:9)], as.numeric)  %>% 
+      mutate(Tidevann = na_if(Tidevann,0)) %>%   
+      mutate(Bolgeeksponering = na_if(Bolgeeksponering,0)) %>%   
+      mutate(Miksing_i_vannsoylen = na_if(Miksing_i_vannsoylen,0)) %>%    
+      mutate(Oppholdstid = na_if(Oppholdstid,0)) %>%   
+      mutate(Gjennomstromminghastighet = na_if(Gjennomstromminghastighet,0))   
+  }
+  
+  # Antall observasjoner per Okoregion:
+  print(paste0("Observasjoner per økoregion i ",datname,":"))
+  print(dat %>% group_by(Okoregion) %>% summarise(`Ant. Vanntyper` =  length(unique(Vanntype)), `Ant. obs` = n()))
+  
+  # Slår sammen de to nordligste økoregionene for ferskvanns-habitat:
+  if(habitat %in% c("innsjo","elver")){
+    Nordnorge <- c("N", "F") 
+    dat <- 
+    dat %>% 
+    mutate(Okoregion = ifelse(Okoregion %in% Nordnorge, "N", Okoregion)) 
+  
+    print(paste0("Observasjoner per økoregion etter sammenslåing i ",datname,":"))
+    print(dat%>% group_by(Okoregion) %>% summarise(`Ant. Vanntyper` = length(unique(Vanntype)), `Ant. obs` = n()))
+    rm(Nordnorge)
+  }
+  
+  # Gjør om variabler til faktor
+  dat <-
+    dat %>%
+    mutate_at(variabler,as.factor) 
+ 
+  assign(datname, dat)  # Oppdaterer det opprinnelige datasettet
+  rm(dat, datname)
+}
+
+print("Observasjoner per nivå i vanntype-variabler, ForcingData:")
+apply(ForcingData[,variabler],2,table,exclude=NULL)
+
+print("Observasjoner per nivå i vanntype-variabler, PredData:")
+apply(PredData[,variabler],2,table,exclude=NULL)
+
+par(mfrow=c(2,5),mar=c(2,1,2,1),oma=c(1,1,3,1))
+for (var in variabler)
+{
+  boxplot(ForcingData$Response~unlist(ForcingData[,var]),main=var,xlab="",ylab="")
+}
+mtext(side=3, "Respons-variabel per faktor-variabel i data", outer = TRUE)
+
+# Oversikt for kalk
+# 1 Svært kalkfattig: Ca < 1 mg/L, Alk < 0,05 mekv/L
+# 2 Kalkfattig: Ca 1-4mg/L,Alk.0,05-0,2mekv/L
+# 3 Moderat kalkrik: Ca 4-20mg/L, Alk.0,2-1mekv/L
+# 4 Kalkrik: Ca > 20 mg/L, Alk. > 1 mekv/L
+
+# Oversikt for humus
+# Humusinnhold 4 Svært klar: Farge < 10 mg Pt/L, TOC < 2 mg/L
+#1 Klar: Farge 10-30 mg Pt/L, TOC 2-5 5 mg/L
+#2 Humøs: Farge 30-90 mg Pt/L, TOC 5-15 mg/L
+#3 Svært humøs (sjelden): Farge > 90 mg Pt/L, TOC > 15 mg/L
+
+```
+
+# Statistisk modell
+Vi bruker en regresjonsmodell (GAM) for å forklare variasjonen i NEQR ut i fra variablene i vanntype (kategoriske variabler) og år. Vi inkluderer år som kontinuerlig variabel (smooth), siden vi antar at det er (potensielt ikke-linjære) trender over tid (ikke tilfeldig år-til-år variasjon). Dette tillater oss også å predikere for år vi eventuelt ikke har data for.
+Vi inkluderer også interaksjoner mellom år og de kategoriske variablene. I en GAM vil den linjære effekten av de kategoriske variablene (stigningstallet) varierere som en "smooth funksjon" av år (definert med "by"-argument i GAM).  
+
+Vi beregner predikert NEQR per år og vannforekomst ut i fra den statistiske modellen og informasjon om vanntype per vannforekomst, og kalkulerer deretter gjennomsnitt predikert NEQR per kommune og år. Vi predikerer NEQR kun for kombinasjonen av vannforekomst og år om vi:    
+- Har data for alle av vanntype-kategoriene som inngår i modellen
+- Har data fra samme økoregion (for ferskvann) eller økoregion OG kysttype (marint) for samme år eller foregående år. Dvs., vi predikerer ikke for år før vi har data for en gitt økoregion/kysttype.
+
+
+```{r prepare_data_for_model, echo = FALSE}
+# Definerer prediktorvariabler 
+# Fjerner eventuelle prediktor-variabler med bare 1 nivå:
+num_unique <-
+  ForcingData %>%
+  summarize_at(variabler, n_distinct, na.rm = TRUE)
+print(num_unique)
+variabler_modell <- c(variabler[num_unique>=2])
+
+# For kyst-habitat er salinitet, bølgeeksponering, miksing, oppholdstid og gjennomstrømming definert av kysttype (+ økoregion for salinitet)
+# Vi bruker derfor kysttype og økoregion og fjerner disse
+if(habitat == "kyst"){
+  variabler_modell <- variabler_modell[grepl(paste(c("Oko","Kyst","Tide"), collapse="|"), variabler_modell)]
+}
+
+print(variabler_modell)
+
+# Bruker datasett uten manglende verdier for variablene til modellen:
+ForcingData_modell <-
+  ForcingData %>%
+  drop_na(all_of(variabler_modell))  
+
+print(dim(ForcingData))
+print(dim(ForcingData_modell))
+
+# Klargjør datasett for prediksjoner
+# Bruker prediksjons-datasett uten manglende verdier i de relevante vanntype-variablene: 
+PredData_modell <- PredData %>%
+  drop_na(all_of(variabler_modell))  
+
+# Fjerner eventuelle faktor-nivå i PredData som ikke finnes i ForcingData:
+for (var in variabler_modell){
+  PredData_modell <- 
+    PredData_modell %>%
+    semi_join(ForcingData_modell, by = var)  %>%
+      mutate(!!sym(var) := fct_drop(!!sym(var))) # Fjern ubrukte faktor-nivå
+}
+
+dim(PredData)[1]
+dim(PredData_modell)[1]
+
+# Lager datasett for prediksjoner per vannforekomst og år:
+# Vi predikerer kun for år etter første år vi har data for 
+years <- c(1990, 2000, 2010, 2011, 2012, 2013, 2014, 2019, 2024)
+years <- years[years>=min(ForcingData$Year)]
+print("Vi har data til å predikere for følgende år:")
+print(years)
+
+PredData_allyrs <-
+  PredData_modell %>% 
+  slice(rep(row_number(),length(unique(years)))) %>%  # Kopierer for alle år  
+  mutate(Year = rep(years, each=dim(PredData_modell)[1]))   # Legger til års-variabel
+
+dim(PredData_allyrs)[1]
+
+# For ferskvann: Fjerner kombinasjoner av år og økoregion før år med data tilgjengelig
+if(habitat %in% c("innsjo","elver")){
+for(x in unique(ForcingData_modell$Okoregion)){
+  print(x)
+  min_year <- min(ForcingData_modell %>% 
+                    filter(Okoregion == x) %>% 
+                    dplyr::select(Year))
+  print(min_year)
+  print(dim(PredData_allyrs)[1])
+  PredData_allyrs <- PredData_allyrs %>%
+    filter(!(Okoregion == x & Year < min_year)) 
+  print(dim(PredData_allyrs)[1])
+  }
+}
+
+# For kyst, år kontinuerlig: Fjerner kombinasjoner av år og økoregion+kysttype før år med data tilgjengelig
+if(habitat %in% c("kyst")){
+ ForcingData_modell <- ForcingData_modell %>% unite("OkoKyst", Okoregion, Kysttype, remove = FALSE)
+ PredData_allyrs <- PredData_allyrs %>% unite("OkoKyst", Okoregion, Kysttype, remove = FALSE)
+ 
+# Fjerner først kombinasjoner av økoregion og kysttype som ikke finnes i data
+ PredData_allyrs <- 
+  PredData_allyrs %>%
+  filter(OkoKyst %in% ForcingData_modell$OkoKyst)
+print(dim(PredData_allyrs)[1])
+
+# Fjerner så år før vi har data for kombinasjon
+for(x in unique(PredData_allyrs$OkoKyst)){
+  print(x)
+  min_year <- min(ForcingData_modell %>% 
+                    filter(OkoKyst == x) %>% 
+                    dplyr::select(Year))
+  print(min_year)
+  PredData_allyrs <- PredData_allyrs %>%
+    filter(!(OkoKyst == x & Year < min_year)) 
+  print(dim(PredData_allyrs)[1])
+  }
+}
+
+```
+
+```{r fit_model, echo = FALSE}
+#mod_type <-"GAM" 
+mod_type <-"BRT" 
+
+if(mod_type == "GAM"){
+  #require(MuMIn) # For modell-seleksjon med dredge
+  require(mgcv) # For GAM
+
+# Med eller uten interaksjoner mellom år og faktorer?
+interactions <- TRUE;
+
+# Legg til årsvariabel og eventuelle interaksjoner:
+if (interactions==FALSE) {
+  variabler_modell <- c(variabler_modell, paste0("s(","Year",")"));
+} else {
+  variabler_modell <- c(variabler_modell, paste0("s(","Year",")"),
+                        paste0("s(","Year",", by=",variabler_modell,")"));
+}
+
+# For blåskjell blir det veldig rare prediksjoner når interaksjon mellom år og tidevann er med, fjerner den:
+if (interactions==TRUE & index=="blaaskjell") {
+  variabler_modell <- variabler_modell[variabler_modell!="s(Year, by=Tidevann)"]
+}
+
+print(variabler_modell) ;
+
+# Formulerer GAM (om år er kategorisk variabel blir resultatet som en lm). 
+# Ved å sette family=betar brukes beta-fordeling, som er til data mellom 0 og 1 MEN som eksluderer 0 og 1. Vi har mange 1'verdier, derfor er ikke denne egnet.  
+# Har også tested "zero-one-inflated beta regression model" med pakka brms, men denne modellen tar veldig lang tid å kjøre
+xvar <- "Response~" ;
+
+fam <-  "gaussian" ;# Normal fordeling, brukes for NEQR 
+#fam <-  "betar" ;# For fordelinger mellom 0 og 1, men som ekskluderer 0 og 1. 
+if(fam=="betar"){
+  ForcingData_modell$Response[ForcingData_modell$Response==1] <- 0.99999;
+  ForcingData_modell$Response[ForcingData_modell$Response==0] <- 0.00001
+}
+
+full.model <- gam(formula(paste(xvar, paste(variabler_modell, collapse="+"))),
+                    data=ForcingData_modell,na.action = "na.fail",family = fam) ;
+
+# Modellseleksjon kan gjøres basert på AIC. Siden vi er interessert i å forklare mest mulig av variasjoner inkluderer vi alle variabler i den endelige modellen, men antar at eventuelle variabler uten effekt ikke vil påvirke prediksjonene. 
+#aic_tbl <- dredge(full.model);
+#step.model <- get.models(aic_tbl, subset = 1)[[1]]
+step.model <- full.model
+# Sammendrag av modellen:
+print(summary(step.model))
+par(mfrow=c(2,2),mar=rep(2,4))
+gam.check(step.model)
+
+# Predikerer fra modellen og legger til datasettet
+Preds <- predict.gam(step.model, newdata=PredData_allyrs, type = "response", se.fit = TRUE)
+#Preds <- predict(brms_model, newdata=PredData_allyrs)
+
+# Legger til prediksjoner 
+PredData_allyrs <- 
+  PredData_allyrs %>% 
+  mutate("Prediksjon" = Preds$fit)  %>% 
+  mutate("Standardfeil" = Preds$se) 
+
+# PredData_allyrs <- 
+#   PredData_allyrs %>% 
+#   mutate("Prediksjon" = Preds[,1])  %>% 
+#   mutate("Standardfeil" = Preds[,2]) 
+
+# Endrer evt. verdier over 1 eller under 0 for NEQR-prediksjoner:
+if(index != "blaaskjell"){
+PredData_allyrs <- 
+  PredData_allyrs %>% 
+  mutate(Prediksjon = replace(Prediksjon, Prediksjon > 1, 1))%>%
+  mutate(Prediksjon = replace(Prediksjon, Prediksjon < 0, 0.00001))
+}
+
+# Endrer evt. verdier under 0 for blåskjell:
+if(index == "blaaskjell"){
+PredData_allyrs <- 
+  PredData_allyrs %>% 
+  mutate(Prediksjon = replace(Prediksjon, Prediksjon < 0, 0.00001))
+}
+
+Preds <- Preds$fit
+}
+
+if(mod_type == "BRT"){
+  require(dismo) 
+  require(gbm) 
+
+  variabler_modell <- c(variabler_modell, "Year")
+  print(variabler_modell) ;
+  xvar <- "Response~" 
+  explind <- which(names(ForcingData_modell) %in% variabler_modell) # Index predictor variables
+
+  # Kjører BRT. For å få et mål på variasjon gjøres dette 100 ganger (bootstrap) på 90% av datasettet, og vi beregner snitt og standardavvik fra prediksjonene per modell
+  pred_mat <- matrix(NA,nrow=dim(PredData_allyrs)[1],ncol=2)
+  for(x in 1:2){
+  ForcingData_modell_x <- ForcingData_modell %>% 
+    sample_frac(0.9)
+    
+  full.model <- gbm.step(data = ForcingData_modell_x,
+                            gbm.x = explind,
+                            gbm.y = "Response",
+                            learning.rate = 0.001, # how slow the model is learning
+                            tree.complexity = 4, # number of splits (possible interactions between variables)
+                            family = "gaussian", # gaussian=normal, bernoulli=binomial, poisson=counts
+                            bag.fraction = 0.7, # proportion of observations used each iteration)
+                            #      n.trees = 100,
+                            plot.main = FALSE,
+                            silent = TRUE)
+  # tot.dev <- full.model$self.statistics$mean.null # mean null deviance
+  # res.devCV <- full.model$cv.statistics$deviance.mean  # mean residual deviance cv
+  # dev.expCV <- round((tot.dev-res.devCV)/tot.dev,2) # deviance explained
+  # CorCV <- round(full.model$cv.statistics$correlation.mean,2)
+  # print(paste0("Deviance explained, cross validated: ",dev.expCV))
+  # print(paste0("Correlation, cross validated: ",CorCV))
+  
+  # Predikerer fra modellen
+  pred_mat[,x] <- predict.gbm(full.model, newdata=PredData_allyrs, type = "response")
+  rm(ForcingData_modell_x)
+  }
+  # Legger til prediksjoner 
+  PredData_allyrs <- 
+    PredData_allyrs %>% 
+    mutate("Prediksjon" = apply(pred_mat,1,mean))  %>% 
+    mutate("Standardfeil" = apply(pred_mat,1,sd)) 
+
+# Endrer evt. verdier over 1 eller under 0 for NEQR-prediksjoner:
+if(index != "blaaskjell"){
+PredData_allyrs <- 
+  PredData_allyrs %>% 
+  mutate(Prediksjon = replace(Prediksjon, Prediksjon > 1, 1))%>%
+  mutate(Prediksjon = replace(Prediksjon, Prediksjon < 0, 0.00001))
+}
+  Preds <- apply(pred_mat,1,mean)
+  
+  }
+# Har også testa en "brm" (Bayesian Generalized (Non-)Linear Multivariate Multilevel Models) som kan inkludere zero-one-inflated beta distribution, noe som passer perfekt i vårt tilfelle. Men disse modellene er veldig tunge å kjøre og predikere fra, så det er ikke praktisk å bruke i dette tilfellet med mange variabler
+#xvar_zero <- "zoi~"
+# brms_model <- brm(
+#   bf(paste(xvar, paste(variabler_modell, collapse="+"))),
+#               # formula(paste(xvar_zero, paste(variabler_modell, collapse="+")))),
+#   data = ForcingData_modell,
+#   family = zero_one_inflated_beta())
+
+#summary(full.model)
+#summary(brms_model)
+#plot(brms_model)
+```
+
+Lagrer prediksjonene 
+```{r predictions}
+par(mfrow=c(2,1),mar=rep(2,4))
+hist(Preds,main="Originale prediksjoner",xlab="",ylab="")
+hist(PredData_allyrs$Prediksjon,main="Nye prediksjoner",xlab="",ylab="")
+
+# Beregner gjennomsnitts prediksjon og standardavvik per kommune og år. Tar gjennomsnitt av standardavvik i stedet for standardavvik av standardavvik fordi vi ønsker å forstå den typiske variasjonen i prediksjonene, ikke variasjonen av variasjonen. Standardavviket av standardavviket blir mindre enn gjennomsnittet av standardavviket
+PredData_means <- 
+  PredData_allyrs %>% 
+   filter(!is.na(Kommunenr)) %>%
+  group_by(Kommunenr,Year) %>% 
+  summarise(Prediksjon_snitt = mean(Prediksjon),
+            Standardfeil_snitt = mean(Standardfeil)) %>% 
+  ungroup(Kommunenr) 
+
+write.table(PredData_means,paste0("../../02_Predictions/",index,".csv"),quote = FALSE, sep = ",", row.names = FALSE)
+
+rm(Preds, PredData_modell, step.model)
+```
+
+# Sammenligning mellom observasjonsdata og prediksjoner
+Kartet under viser gjennomsnittilig NEQR per kommune, basert på innsamlede data per år i det tilgjengelige datagrunnlaget. 
+```{r maps, echo=FALSE, message=FALSE, fig.cap = "Gjennomsnitt NEQR-verdi per år og kommune."}
+col_scale <- brewer.pal(11, 'Spectral')
+# Leser inn shapefil:
+shapefile <- "../../01_Data/04_GIS/01_Kommuner/Norway_utm33n.shp"
+shp<- st_read(shapefile) %>%
+  rename(Kommunenr=KOMM)
+
+# For blåskjell, replikerer observasjoner som strekker over flere kommuner
+if(index == "blaaskjell"){
+ForcingData_modell <- 
+  ForcingData_modell %>%
+  mutate(Komm5 = as.numeric(Komm5)) #Setter kommunenr til numerisk
+
+ForcingData_modell <- pivot_longer(ForcingData_modell,
+                     cols = paste0("Komm",1:7),   # Kopierer for alle kommuner  
+                     values_to = "Kommunenr")
+
+ForcingData_modell <- 
+  ForcingData_modell %>%
+  filter(!is.na(Kommunenr))
+}
+
+
+ylims <- c(0,1)
+
+xvar <- "Response_mean"
+
+years <- sort(unique(ForcingData_modell$Year))
+# Fram til 2010 plotter vi gjennomsnitt per 10-års periode
+years <- years[years>=1980]
+years[years<2010] <- floor(years[years<2010]/10)*10
+years <- unique(years)
+
+maps <- list()
+
+for(y in 1:length(years)){
+  # Trekker ut prediksjoner for gitt år eller periode (før 2010), tar gjennomsnitt per kommune:
+  if(years[y]<2010){
+    years_y <-seq(years[y],years[y]+9,by=1) 
+  } else {
+    years_y <-years[y] 
+  }
+
+  ForcingData_modell_y <- ForcingData_modell  %>%
+    filter(Year %in% years_y) %>%
+    group_by(Kommunenr) %>%
+    summarise(Response_mean = mean(Response)) %>%
+    dplyr::select(Kommunenr, all_of(xvar))
+
+  # Slår sammen shapefil og prediksjoner:
+  shp_y <- shp %>%
+    left_join(ForcingData_modell_y)
+  
+  rm(ForcingData_modell_y)
+
+  # Definerer plot for gitt år:
+  maps[[y]] <-  ggplot(data = shp_y ) +
+    geom_sf(aes(fill = get(xvar)), colour = "dark grey", size = 0.1)  +
+    scale_fill_gradientn(name=xvar,colours = col_scale, na.value = "white") + # Fargeskala
+        expand_limits(fill=ylims) +  #Grenser for skala
+  theme_void() +
+  ggtitle(years_y) + # Tittel
+  theme(legend.position = "none", plot.margin = unit(rep(.01, 4), "lines")) # Fjern skala fra plot
+  
+   if(years[y]<2010){
+    maps[[y]] <- maps[[y]] + ggtitle(paste0(min(years_y),"-",max(years_y)))
+  } 
+}
+
+#Plot for legend:
+# legend <- ggplot(data = shp_y ) +
+#     geom_sf(aes(fill = get(xvar)), colour = "dark grey", size = 0.1)  +
+#     scale_fill_gradientn(name=xvar,colours = col_scale, na.value = "white") + # Fargeskala
+#         expand_limits(fill=ylims)  +
+#   theme(legend.justification = "left", legend.title = element_blank())
+# 
+# maps[[y+1]] <- cowplot::get_legend(legend)
+
+grid.arrange(grobs = maps, ncol=6)
+
+```
+
+Kartet under viser gjennomsnittilig predikert NEQR per kommune, basert på den statistiske modellen, for de årene som Naturindeksen skal leveres. Som beskrevet over beregnes prediksjonene kun for en gitt økoregion om vi har data fra den økoregionen (og kysttypen for marine indikatoren) for samme år eller foregående år. 
+
+```{r plot_maps_model, echo=FALSE, fig.cap = "Predikert NEQR-verdi per år og kommune"}
+# Plot for prediksjoner per år og kommunenr
+years <- sort(unique(PredData_means$Year))
+
+xvar <- "Prediksjon_snitt"
+#xvar <- "Standardfeil_snitt"
+
+maps <- list()
+
+for(y in 1:length(years)){
+  # Trekker ut prediksjoner for gitt år
+  PredData_means_y <- PredData_means  %>% 
+    filter(Year == years[y]) %>%
+    dplyr::select(Kommunenr, all_of(xvar))
+  
+  # Slår sammen shapefil og prediksjoner 
+  shp_y <- shp %>%
+      left_join(PredData_means_y)
+  
+  rm(PredData_means_y)
+ 
+  # Definerer plot for gitt år
+  maps[[y]] <- ggplot(data = shp_y ) +
+    geom_sf(aes(fill = get(xvar)), colour = "dark grey", size = 0.1)  +
+    scale_fill_gradientn(name=xvar,colours = col_scale, na.value = "white") + # Fargeskala
+        expand_limits(fill=ylims) +  #Grenser for skala
+  theme_void() +
+  ggtitle(years[y]) + # Tittel
+  theme(legend.position = "none") # Fjern skala fra plot
+}
+
+#Plot for legend:
+legend <- ggplot(data = shp_y ) +
+    geom_sf(aes(fill = get(xvar)), colour = "dark grey", size = 0.1)  +
+    scale_fill_gradientn(name=xvar,colours = col_scale, na.value = "white") + # Fargeskala
+        expand_limits(fill=ylims)  +
+  theme(legend.justification = "left", legend.title = element_blank())
+  
+maps[[y+1]] <- cowplot::get_legend(legend)
+
+grid.arrange(grobs = maps, ncol=4)
+#g<-arrangeGrob(grobs = maps, ncol=4)
+#ggsave(file="Plots_allyears/AIP_pred_new.pdf", g)
+```
+
+Plottet under viser predikert NEQR per kommune sammenlignet med datagrunnlaget (gjennomsnittlig målt NEQR per kommune), for de kommunene hvor vi har data for samme år som prediksjonene gjøres. Korrelasjonskoeffisient og p-verdi for korrelasjonen er vist med rød skrift i plottet, og den linjære sammenhengen er vist som svart linje. 
+
+```{r plot_corrs_dat_model, echo=FALSE, fig.cap = "Korrelasjon mellom data og prediksjoner på kommunenivå."}
+ForcingData_modell_per_y <- ForcingData_modell  %>%
+    group_by(Kommunenr, Year) %>%
+    summarise(Response_mean = mean(Response))
+
+corrdat <- PredData_means  %>% 
+  left_join(ForcingData_modell_per_y) %>% 
+  filter(!is.na(Response_mean))
+
+r <- round(cor(corrdat$Response_mean, corrdat$Prediksjon_snitt), 2)
+p <- cor.test(corrdat$Response_mean, corrdat$Prediksjon_snitt)$p.value
+
+ggplot(corrdat, aes(Response_mean, Prediksjon_snitt)) +
+  geom_point()  + 
+  geom_smooth(method="lm", col="black") + 
+  annotate("text", x=0.02, y=0.99, label=paste0("r = ", r), col="red") +
+  annotate("text", x=0.02, y=0.965, label=paste0("p = ", round(p, 3)), col="red") +
+  theme_classic() + ylab("Prediksjon (snitt per kommune)") + xlab("Observert (snitt per kommune)")
+
+```
+
+# Gjennomsnittlige verdier per økoregion
+
+```{r plot_means, eval=TRUE, echo=FALSE, fig.cap = "Gjennomsnitts-prediksjoner per år og økoregion (for ferskvann dekker kategorien Nord-Norge ytre hele Nord-Norge)"}
+# Plot for prediksjoner per år og kommunenr
+
+PredData_means_regions <- 
+  PredData_means %>% 
+  left_join(PredData %>% dplyr::select(Kommunenr, Økoregion)) %>% 
+  group_by(Økoregion,Year) %>% 
+  summarise(Mean = mean(Prediksjon_snitt),
+            Sd = sd(Prediksjon_snitt))
+
+regions <- unique(PredData_means_regions$Økoregion)
+years <- unique(PredData_means_regions$Year)
+
+plots <- list()
+
+for(i in 1:length(regions)){
+  # Trekker ut snitt for gitt region
+  dat_i <- PredData_means_regions %>% 
+    filter(Økoregion == regions[i]) 
+  
+  # Definerer plot for gitt region
+  plots[[i]] <- ggplot(dat_i, aes(x = Year, y = Mean)) + 
+            geom_linerange(aes(x = Year, ymin = Mean-Sd, ymax = Mean+Sd), dat_i) +
+            geom_point(shape = 21, bg = "cyan", size = 3) +
+            theme_bw() +
+            ggtitle(regions[i]) +
+            xlim(range(years)) +
+            ylim(c(0,1))
+
+}
+
+grid.arrange(grobs = plots, ncol = ceiling(length(regions)/2))
+
+```
+
+# Opplasting til NI-databasen
+Predikerte NEQR-verdier blir lasta opp til NI-databasen på nett ved å bruke NIcalc-biblioteket i R i scriptet <a href="NICalc_upload.r" download>NICalc_upload.r</a>. Laster først ned den eksisterende databasen for den gitte indikatoren, og oppdaterer så verdi (=prediksjon) og 'distrObjects' (beregnes av funksjoner i NIcalc). Verdier for kommuner og år vi ikke har prediksjoner for, men som finnes i databasen allerede, blir satt til NA.
+

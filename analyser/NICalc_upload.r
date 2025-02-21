@@ -29,21 +29,20 @@ myIndicators <- NIcalc::getIndicators()
 
 ### Løkke for alle indikatorer som er predikert fra modeller ####
 
-indID <- array(c(146,11,233,213,75,74,21,22,18,145,343),dim=c(1,11),
+indID <- array(c(146,11,233,213,75,74,21,22,18,145),dim=c(1,10),
              dimnames = list(1,c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","blaaskjell","Chla")))
 
 for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell"
-  #index <- "AIP"
   # Laster inn prediksjoner 
   print(paste0("Laster inn prediksjoner for ",index))
-  PredData_means <- read.table(paste0("../04_Predictions/",index,".csv"),sep=",",header = TRUE)
+  PredData_means <- read.table(paste0("../../02_Predictions/",index,".csv"),sep=",",header = TRUE)
   
   # Henter verdier fra databasen for en gitt indikator
   print(paste0("Laster ned NI-databasen for ",index,"(",indID[,index],")"))
   indicatorData <- NIcalc::getIndicatorValues(indicatorID = indID[,index])
   
   # Leser inn fil med alle kommunenr/navn i databasen
-  kommunenavn <- read_xlsx("../01_Data/04_GIS/Kommuner i NIbasen.xlsx") 
+  kommunenavn <- read_xlsx("../../01_Data/04_GIS/Kommuner i NIbasen.xlsx") 
   
   # Legger til kommunenavn fra "Kommuner i NIbasen" i prediksjoner
   PredData_means <- PredData_means %>% 

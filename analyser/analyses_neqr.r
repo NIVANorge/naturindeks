@@ -12,8 +12,8 @@
 rm(list = ls())
 
 
-for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell",
- # for (index in c("MSMDI")){ #"blaaskjell",
+#for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell",
+for (index in c("TIc","H","NQI1","Chla")){ #"blaaskjell",
     ind_names <- array(c("Naturindeks plankton innsjøer",
                        "Begroing eutrofierings indeks elver",
                        "Begroing elver forsurings indeks",

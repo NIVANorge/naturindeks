@@ -66,7 +66,7 @@ ind_names <- array(c("Naturindeks plankton innsjøer",
 #dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
 dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","Chla")))
 
-#index <- "RSLA" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
+#index <- "AIP" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
 print(paste0("Indikator: ",ind_names[,index]," (",index,")"))
 
 # Laster inn fil med NEQR-verdier:
@@ -438,8 +438,29 @@ if(mod_type == "BRT"){
   xvar <- "Response~" 
   explind <- which(names(ForcingData_modell) %in% variabler_modell) # Index predictor variables
 
+  
+  # Beregner først optimal kombinasjon av learning rate, tree complexity og bag fraction
+  #https://rdrr.io/github/adamlilith/enmSdm/man/trainBrt.html#heading-1
+  source("trainBrt_AdamLillith.R")
+  set.seed(123)
+
+  mod_tuning <- trainBrt(data = ForcingData_modell,  
+                  resp = "Response",             
+                  preds = explind,
+                  family = "gaussian",
+                  learningRate = c(0.001, 0.01, 0.1), #Elith et al. 2008 recommend 0.0001 to 0.1)
+                  treeComplexity = c(2, 3, 4),
+                  bagFraction=c(0.5, 0.6, 0.7), #Elith et al. 2008 recommend 0.5 to 0.7
+                  out=c('tuning', 'model'),
+                  verbose=FALSE)
+
+  # Trekk ut beste kombinasjon 
+  selected <- mod_tuning$tuning[1,c(2:4,7)]
+  print("Beste kombinasjon av parametere for BRT:")
+  print(selected)
+
   # Kjører BRT. For å få et mål på variasjon gjøres dette X ganger (bootstrap) på 90% av datasettet, og vi beregner snitt og standardavvik fra prediksjonene per modell
-  X <- 2
+  X <- 100
   pred_mat <- matrix(NA,nrow=dim(PredData_allyrs)[1],ncol=X)
   for(x in 1:X){
   ForcingData_modell_x <- ForcingData_modell %>% 
@@ -448,10 +469,10 @@ if(mod_type == "BRT"){
   full.model <- gbm.step(data = ForcingData_modell_x,
                             gbm.x = explind,
                             gbm.y = "Response",
-                            learning.rate = 0.001, # how slow the model is learning
-                            tree.complexity = 3, # number of splits (possible interactions between variables)
+                            learning.rate = selected[1], # how slow the model is learning
+                            tree.complexity = selected[2], # number of splits (possible interactions between variables)
                             family = "gaussian", # gaussian=normal, bernoulli=binomial, poisson=counts
-                            bag.fraction = 0.7, # proportion of observations used each iteration)
+                            bag.fraction = selected[3], # proportion of observations used each iteration)
                             #      n.trees = 100,
                             plot.main = FALSE,
                             silent = TRUE)
@@ -513,7 +534,7 @@ PredData_means <-
 
 write.table(PredData_means,paste0("../../02_Predictions/",index,".csv"),quote = FALSE, sep = ",", row.names = FALSE)
 
-rm(Preds, PredData_modell, step.model)
+rm(Preds, step.model)
 ```
 
 # Sammenligning mellom observasjonsdata og prediksjoner
@@ -677,7 +698,7 @@ ggplot(corrdat, aes(Response_mean, Prediksjon_snitt)) +
 
 PredData_means_regions <- 
   PredData_means %>% 
-  left_join(PredData %>% dplyr::select(Kommunenr, Økoregion)) %>% 
+  left_join(PredData_modell %>% dplyr::select(Kommunenr, Økoregion)) %>% 
   group_by(Økoregion,Year) %>% 
   summarise(Mean = mean(Prediksjon_snitt),
             Sd = sd(Prediksjon_snitt))

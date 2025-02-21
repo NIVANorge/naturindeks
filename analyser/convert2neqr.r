@@ -18,12 +18,20 @@ file.list <- list.files(path=inpath,pattern="plankton-PTI", recursive=TRUE, full
 
 # Kombinerer nye og gamle data, og legger til de nye variablene i data.frame:
 PTIdata <- file.list %>%
-  map_dfr(~read_excel(.x))%>%
+  map_dfr(~read_excel(.x,))%>%
   mutate(Date = as.Date(ifelse(grepl("-", Date),
                  as.Date(Date, format = c("%Y-%m-%d")),                            
                  as.Date(Date, format = c("%d.%m.%Y"))))) %>% # setter Date til datatype "dato"
   mutate(Year = format(Date, "%Y")) %>% # lager en ny kolonne og legger inn verdier
-  mutate(Month = format(Date, "%m")) 
+  mutate(Month = format(Date, "%m"))  %>% 
+  select(-"...1") %>%  # Fjerner første kolonne (ID)
+  distinct() # Fjerner eventuelle duplikater (108)
+
+# duplicated <- PTIdata  %>% 
+#   group_by_all()  %>% 
+#   filter(n() > 1)  %>% 
+#   ungroup() %>%
+#   arrange(Date)
 
 
 # Oversikt over data
@@ -76,7 +84,7 @@ PTIavg <-
   mutate(Upper_EQR = min(c(1.0, Limit_PTI$limits[EQR_PTI < Limit_PTI$limits & EQR_Type == Limit_PTI$name]))) %>%
   mutate(Lower_NEQR = max(c(0.0, Limit_PTI$lower[EQR_PTI > Limit_PTI$limits & EQR_Type == Limit_PTI$name]))) %>%
   mutate(NEQR_PTI = min(c(1.0, ((EQR_PTI - Lower_EQR) / (Upper_EQR - Lower_EQR) * 0.2 + Lower_NEQR)))) %>%  # nEQR skal ha maks-verdi 1
-  mutate(Response = NEQR_PTI) # Setter responsvariabel til NEQR
+  mutate(Response = NEQR_PTI)  # Setter responsvariabel til NEQR
 
 write_xlsx(PTIavg,paste0(outpath,"NEQR_PTI.xlsx"))
 
@@ -92,7 +100,8 @@ Begroingdata <- file.list %>%
                                as.Date(Date, format = c("%Y-%m-%d")),                            
                                as.Date(Date, format = c("%d.%m.%Y"))))) %>% # setter Date til datatype "dato"
   mutate(Year = as.numeric(format(Date, "%Y"))) %>% # lager en ny kolonne i datasettet ditt og legger inn verdier
-  mutate(Month = as.numeric(format(Date, "%m")))
+  mutate(Month = as.numeric(format(Date, "%m")))  %>% 
+  select(-"...1") # Fjerner første kolonne (ID)
 
 
 # Oversikt over data
@@ -151,7 +160,8 @@ PIT <-
   mutate(Lower_NEQR = max(c(0.0,  Limit_PIT$lower[EQR_PIT > Limit_PIT$limits & Kalkfattig == Limit_PIT$name]))) %>%
   mutate(NEQR_PIT = (EQR_PIT - Lower_EQR) / (Upper_EQR - Lower_EQR) * 0.2 + Lower_NEQR) %>%
   mutate(NEQR_PIT = min(1, max(c(0.0,  NEQR_PIT)))) %>%  # Setter nEQR mellom 0 og 1
-  mutate(Response = NEQR_PIT) # Setter responsvariabel til NEQR
+  mutate(Response = NEQR_PIT) %>%  # Setter responsvariabel til NEQR
+  distinct() # Fjerner eventuelle duplikater (1)
 
 write_xlsx(PIT,paste0(outpath,"NEQR_PIT.xlsx"))
 
@@ -202,12 +212,13 @@ AIP <-
   mutate(NEQR_AIP = min(1, max(c(0.0,  NEQR_AIP)))) %>%  # Setter nEQR mellom 0 og 1
   mutate(Response = NEQR_AIP) %>% # Setter responsvariabel til NEQR
 # OBS: Iflg Susi Schneider kan data fra før 2011 være feil pga endringer i indeksen, fjerner derfor disse
-  filter(Year >= 2011) 
-  
+  filter(Year >= 2011) %>%
+  distinct() # Fjerner eventuelle duplikater (1)
+
+
 write_xlsx(AIP,paste0(outpath,"NEQR_AIP.xlsx"))
 
 # MERK: DET KAN VÆRE FLERE OBSERVASJONER I SAMME VANNFOREKOMST PER ÅR (F.EKS ULIKE MÅNEDER/STASJONER) - SKAL DET TAS GJENNOMSNITT FØR BEREGNING AV NEQR?
-# NOEN SER UT TIL Å VÆRE DUPLIKATER
 multipleobs <- AIP %>% 
   group_by(Year, VannforekomstID) %>% 
   mutate(occurrence = n()) %>%
@@ -229,7 +240,10 @@ TIcdata <- file.list %>%
   mutate(Date = as.Date(Date, format = c("%Y-%m-%d")))  %>%
   mutate(Year = as.numeric(format(Date, "%Y"))) %>% 
   mutate(Month = as.numeric(format(Date, "%m"))) %>% 
-  filter(!is.na(EQR_Type))
+  filter(!is.na(EQR_Type))  %>%
+  dplyr::select(-"...1") %>%  # Fjerner første kolonne (ID)
+  distinct() # Fjerner eventuelle duplikater (0)
+
 
 # Oversikt over data
 TIcdata %>% 
@@ -314,7 +328,15 @@ hardbunn <- file.list %>%
                                as.Date(Date, format = c("%Y-%m-%d")),                            
                                as.Date(Date, format = c("%d.%m.%Y"))))) %>% # setter Date til datatype "dato"
   mutate(Year = format(Date, "%Y")) %>% # lager en ny kolonne i datasettet ditt og legger inn verdier
-  mutate(Month = format(Date, "%m"))
+  mutate(Month = format(Date, "%m"))  %>%
+  dplyr::select(-"...1") %>%  # Fjerner første kolonne (ID)
+  distinct() # Fjerner eventuelle duplikater (3, men disse mangler lon/lat og vannforekomstID)
+
+# duplicated <- hardbunn %>%
+#   group_by_all()  %>%
+#   filter(n() > 1)  %>%
+#   ungroup() %>%
+#   arrange(Date)
 
 # Oversikt over data
 hardbunn %>% 
@@ -410,8 +432,15 @@ Blotbunndata <- file.list %>%
   map_dfr(~read_excel(.x)) %>%
   mutate(Date = as.Date(ifelse(grepl("-", Date),
                                as.Date(Date, format = c("%Y-%m-%d")),                            
-                               as.Date(Date, format = c("%d.%m.%Y")))))
+                               as.Date(Date, format = c("%d.%m.%Y"))))) %>%
+  dplyr::select(-"...1") %>%  # Fjerner første kolonne (ID)
+  distinct() # Fjerner eventuelle duplikater (20)
 
+# duplicated <- Blotbunndata %>%
+#   group_by_all()  %>%
+#   filter(n() > 1)  %>%
+#   ungroup() %>%
+#   arrange(Date)
 
 # Oversikt over data
 Blotbunndata %>% 
@@ -432,12 +461,11 @@ BlotbunnAvg <-
   filter(!(is.na(Latitude) | is.na(Longitude) | is.na(EQR_Type))) %>%
   group_by(Latitude, Longitude, Date, Kommunenr, VannforekomstID, Økoregion, Vanntype, EQR_Type) %>%
   summarize(ES100_Avg = mean(ES100), H_Avg = mean(H), ISI_Avg = mean(ISI), NQI_Avg = mean(NQI), NSI_Avg = mean(NSI)) %>%
-  select(Latitude, Longitude, Date, Kommunenr, VannforekomstID, Økoregion, Vanntype, EQR_Type, ES100_Avg, H_Avg, ISI_Avg, NQI_Avg, NSI_Avg)
+  dplyr::select(Latitude, Longitude, Date, Kommunenr, VannforekomstID, Økoregion, Vanntype, EQR_Type, ES100_Avg, H_Avg, ISI_Avg, NQI_Avg, NSI_Avg)
 
 # Veileder: Basert på grabbgjennomsnittet beregnes normalisert EQR (nEQR) for hver indeks etter formelen:
 # nEQR = (Indeksverdi – Klassens nedre indeksverdi)/ (Klassens øvre indeksverdi – Klassens nedre indeksverdi) * 0,2 + Klassens nEQR basisverdi
 # Klassens nEQR basisverdi = nedre grenseverdi for klassens nEQR-verdier. 
-
 
 Blotbunn_class = data.frame(name=c(rep("S_1_3", 3), "S_5", rep("N_1_2", 2), rep("N_3_5", 3), rep("M_1_2", 2), rep("M_3_5", 3)
                                    , rep("G_1_3", 3), rep("G_4_5", 2), rep("H_1_3", 3), rep("H_4_5", 2), rep("B_1_5", 5)),
@@ -589,8 +617,15 @@ chla <- file.list %>%
   filter_at(vars(Økoregion,Vanntype,EQR_Type),all_vars(!is.na(.))) %>%
   filter(case_when(Økoregion %in% c("Nordsjøen Nord","Nordsjøen Sør","Skagerak") ~  Month %in% c(2:10), # Sør for Stadt (Skagerrak og Nordsjøen S+N): fjerner prøver tatt i nov-jan
                     T ~ Month %in% c(3:9))) %>% # Nord for Stadt (Norskehavet S+N og Barentshavet): fjerner prøver tatt i okt-feb
-  filter(Depth2 < 10)  # Fjerner data fra dypere enn 10 meter
+  filter(Depth2 < 10) %>% # Fjerner data fra dypere enn 10 meter
+  dplyr::select(-"Nr") %>%  # Fjerner første kolonne (ID)
+  distinct() # Fjerner eventuelle duplikater (0)
 
+# duplicated <- chla %>%
+#   group_by_all()  %>%
+#   filter(n() > 1)  %>%
+#   ungroup() %>%
+#   arrange(Date)
 
 # Oversikt over data
 chla %>% 
@@ -610,7 +645,7 @@ chla_means <-
   group_by(Latitude,Longitude, Day, Month, Year) %>% 
   summarize(ChlA = mean(ChlA_num))  %>% 
   # Legger til info fra Chla
-  left_join(distinct(chla %>% select(Latitude, Longitude, Kommunenr, Økoregion)))
+  left_join(distinct(chla %>% dplyr::select(Latitude, Longitude, Kommunenr, Økoregion)))
 
 # Beregner så 90 percentile Chla per stasjon per år
 chla_perc <- 
@@ -628,7 +663,7 @@ chla_perc <-
  #mutate(ChlA=exp(ChlA)) %>%
   ungroup %>%
 # Legger til info fra Chla
-  left_join(distinct(chla %>% select(Latitude, Longitude, Year, Kommunenr,VannforekomstID,Vanntype,EQR_Type)))
+  left_join(distinct(chla %>% dplyr::select(Latitude, Longitude, Year, Kommunenr,VannforekomstID,Vanntype,EQR_Type)))
 
 #Beregner NEQR
 # EQR = Referanseverdi/Observert (høyere verdier = dårlig)
@@ -664,7 +699,7 @@ chla_avg <-
   chla_perc %>%
   group_by(VannforekomstID, Year, EQR_Type, Vanntype, Kommunenr) %>% # Tar snitt om det er flere observasjoner for samme vannforekomst
   summarize(Avg_Chla = mean(ChlA)) %>%
-  select(VannforekomstID, Year, EQR_Type, Vanntype, Kommunenr, Avg_Chla) %>%
+  dplyr::select(VannforekomstID, Year, EQR_Type, Vanntype, Kommunenr, Avg_Chla) %>%
   mutate(Ref_Chla = Ref_Chla$ref[match(EQR_Type,Ref_Chla$name)]) %>%
   filter(!is.na(Ref_Chla)) %>%
   rowwise() %>%

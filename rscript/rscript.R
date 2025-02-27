@@ -18,13 +18,14 @@ Sys.setlocale("LC_ALL", "no_NO.UTF-8")
 ################################################################################
 ### list files
 ################################################################################
-x.root.path = "C:\\Users\\rbr\\NIVA\\210200 - Miljøgifter i kystområdene 2021-2025 - Documents"
-x.list.dirs = c("2020\\opparbeiding\\Blåskjell\\registrertBBE",
-                "2021\\opparbeiding\\blåskjell\\Sørfjorden2021_17147 (ARU)",
-                "2021\\opparbeiding\\blåskjell",
-                "2022\\opparbeiding\\blåskjell\\skjema godkjent")
+#x.root.path = "C:\\Users\\rbr\\NIVA\\210200 - Miljøgifter i kystområdene 2021-2025 - Documents"
+#x.list.dirs = c("2020\\opparbeiding\\Blåskjell\\registrertBBE",
+#                "2021\\opparbeiding\\blåskjell\\Sørfjorden2021_17147 (ARU)",
+#                "2021\\opparbeiding\\blåskjell",
+#                "2022\\opparbeiding\\blåskjell\\skjema godkjent")
 
-
+x.root.path = "data\\input\\blåskjell"
+x.list.dirs = c("2020", "2021", "2022", "2023")
 
 # i.dir = 1
 # 

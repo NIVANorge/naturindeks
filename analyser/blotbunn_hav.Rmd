@@ -34,8 +34,7 @@ Laster inn nye data og beregner gjennomsnitt og standardavvik per region.
 
 ```{r load_data, echo=FALSE, message=FALSE}
 
-installation2ocean <- data.frame(Installation = c("Regional01", "Regional02", "Regional03", "Regional04", "Regional05", "Regional06", "Regional07", "Regional08", "Regional09", "Regional10", "Regional11"),
-                                Region = c(rep("Nordsjøen",4), rep("Norskehavet",4), rep("Barentshavet",3)))
+installation2ocean <- data.frame(Installation = c("Regional01", "Regional02", "Regional03", "Regional04", "Regional05", "Regional06", "Regional07", "Regional08", "Regional09", "Regional10", "Regional11"), Region = c(rep("Nordsjøen",4), rep("Norskehavet",4), rep("Barentshavet",3)))
 
 # Laster inn data for 2021-2023 for alle regioner utenom Skagerrak:
 newdat <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/data_per_station_2021_2023.xlsx") 
@@ -57,11 +56,15 @@ dat <- newdat %>%
   mutate(Year = 2024)
 
 # Laster inn data for 2021-2023 for Skagerrak:
-skagerrak <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/Skagerrak_stations_2021_2023.xlsx")
+bt41 <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/Skagerrak_stations_2021_2023.xlsx",sheet = 1)
+bt44 <- read_xlsx("../../01_Data/01_Indeksverdier/03_Blotbunn_hav_MODdatabasen2023/Skagerrak_stations_2021_2023.xlsx",sheet = 2)
+
 print(paste0("Størrelse datasett Skagerrak 2021-2023: ",dim(skagerrak)[1]))
 
-# Beregner gjennomsnitt og kombinerer med data for andre områder
-skagerrak <- skagerrak %>% 
+# Kombinerer data, beregner gjennomsnitt og kombinerer med data for andre områder
+skagerrak <- bt41 %>%
+  dplyr::select(Verdi) %>%
+  full_join(bt44 %>% dplyr::select(Verdi) ) %>%
   summarise(Mean = mean(Verdi), Sd = sd(Verdi))  %>%
   mutate(Year = 2024, Region = "Skagerrak")
 

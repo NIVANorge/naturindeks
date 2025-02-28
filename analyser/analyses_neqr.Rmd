@@ -66,7 +66,7 @@ ind_names <- array(c("Naturindeks plankton innsjøer",
 #dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
 dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","Chla")))
 
-#index <- "AIP" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
+#index <- "PIT" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
 print(paste0("Indikator: ",ind_names[,index]," (",index,")"))
 
 # Laster inn fil med NEQR-verdier:

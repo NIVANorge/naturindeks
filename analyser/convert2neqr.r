@@ -714,19 +714,58 @@ chla_avg <-
 write_xlsx(chla_avg,paste0(outpath,"NEQR_Chla.xlsx"))
 
 
-### SKAL GJØRES:####
-
-
 ### Kyst - blåskjell  #### 
-#Forhold mellom vekt og lengde, ikke NEQR-verdier
-# Standardiseres for ulike referanseverdier moderat/eksponert kyst og andre kysttyper
-bskjell <- read_xlsx("K:\\Avdeling\\211 MarBiMangEut\\_prosjekter\\NI_NIVALake (180357)\\3_Data\\3_Indeksverdier\\Naturindeks-bl?skjell (DHJ HGU).xlsx",sheet = 1)
-
-bskjell <- bskjell %>% 
-  mutate(Reference = ifelse(Kysttype %in% c("?pen eksponert kyst","Moderat eksponert kyst"),
-                            0.97, 1.49)) %>%
-  mutate(Response = Dryweight_length/Reference) %>%  #Setter responsvariabel til normalisert versjon av vekt/lengde 
+# Forhold mellom vekt og lengde, ikke NEQR-verdier
+old.file <- list.files(path=inpath,pattern="skjell", recursive=TRUE, full.names = TRUE, ignore.case = TRUE)
+bskjell <- read_xlsx(old.file,sheet = 1) %>%
   rename(Year = Date)
+
+new.file <- list.files(path=inpath,pattern="mussel", recursive=TRUE, full.names = TRUE, ignore.case = TRUE)
+bskjell_ny <- read_xlsx(new.file,sheet = 1)  %>%
+  mutate(Date = as.Date(ifelse(grepl("-", Date),
+                             as.Date(Date, format = c("%Y-%m-%d")),                            
+                             as.Date(Date, format = c("%d.%m.%Y"))))) %>% # setter Date til datatype "dato"
+  mutate(Year = format(Date, "%Y")) # lager en ny kolonne og legger inn verdier
+  
+# Sjekk for replikate rader
+# duplicated <- bskjell  %>%
+#   group_by_all()  %>%
+#   filter(n() > 1)  %>%
+#   ungroup() %>%
+#   arrange(Year)
+
+# duplicated <- bskjell_ny  %>%
+#   dplyr::select(-Replicate) %>%
+#   group_by_all()  %>%
+#   filter(n() > 1)  %>%
+#   ungroup() %>%
+#   arrange(Date)
+
+# Ny fil: beregner BMI som (tørrvekt/N)/lengde (allerede beregnet i gammel fil)
+bskjell_ny <- bskjell_ny %>% 
+  mutate(Dryweight_length = (Vekt_g/Ant)/Lengde_cm) %>%
+  mutate(Dryweight_length_alt = (Vekt_g)/Lengde_cm) 
+  
+    
+# Standardiseres for ulike referanseverdier moderat/eksponert kyst og andre kysttyper
+# Gammel fil: Kysttype med ord
+bskjell <- bskjell %>% 
+  mutate(Reference = ifelse(grepl("eksponert", Kysttype),0.97, 1.49)) %>%
+  mutate(Response = Dryweight_length/Reference)  #Setter responsvariabel til normalisert versjon av vekt/lengde 
+
+# Ny fil: Kysttype (EQR-type )med kode, der 1/2 innenfor hver økoregion er åpen eksponert/moderat eksponert
+bskjell_ny <- bskjell_ny %>% 
+  mutate(Reference = ifelse(grepl(paste(c(1,2), collapse = "|"), EQR_Type),0.97, 1.49)) %>%
+  mutate(Reference = ifelse(is.na(EQR_Type),NA, Reference)) %>%
+  %>%
+  
+
+Ref_bskjell = data.frame(name =  c("S1", "S2", "S3", "N1", "N2", "N3", "N4", "M1", "M2", "M3", "M4", "H1", "H2", "H3", "H4", "G1", "G2", "G3", "G4", "B1", "B3", "B4"),
+                      ref  =  c(0.97, 0.97, 1.49, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 1.9, 1, 0.9))
+
+
+table(bskjell_ny$Vanntype)
+
 
 write_xlsx(bskjell,"NEQRdata/NEQR_blaaskjell.xlsx")
 

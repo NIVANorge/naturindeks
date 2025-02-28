@@ -4,6 +4,7 @@ from requests.adapters import HTTPAdapter, Retry
 import json
 import pandas as pd
 from pandas import ExcelWriter
+from pandas import json_normalize
 
 ROOT_PATH = "data/2020-/"
 WHERE_PERIOD = "sample_date>=01.01.2020"
@@ -56,6 +57,11 @@ def downloadNIVA_MarinChla():
 def downloadNIVA_Vannplante():
     am.Query(where=f"Vannplanter.parameter_id = 2 and { WHERE_PERIOD }") \
         .export(format="excel", filename="Nivabase-vannplante.xlsx") \
+        .download(path=ROOT_PATH)
+    
+def downloadNIVA_Mussel():
+    am.Query(where=f"species_id=8859 and Biota.parameter_id=6685 and { WHERE_PERIOD }") \
+        .export(format="excel", filename="Nivabase-mussel.xlsx") \
         .download(path=ROOT_PATH)
 
 
@@ -397,7 +403,87 @@ def rewriteNIVA_Vannplante():
     with ExcelWriter(f"{ROOT_PATH}Vannplante-niva.xlsx") as writer:
         out_df.to_excel(writer)
 
+def rewriteNIVA_Mussel():
+    data_df = pd.read_excel(f"{ROOT_PATH}Nivabase-mussel.xlsx", "Biota chemistry")
+    point_df = pd.read_excel(f"{ROOT_PATH}Nivabase-mussel.xlsx", "Stations")
+    token = am.login()
+    data_rows = []
+    samples_stid = 0
+    for idx, row in data_df.iterrows():
+        projectid = row["Project id"]
+        stationid = row["Station id"]
+        if samples_stid != stationid:
+          resp = am.getJson(token, f"{am.api_site}/api/projects/{projectid}/stations/{stationid}/biota/samples")
+          samples_df = json_normalize(resp)
+          samples_stid = stationid
 
+        sampledate = str(row["Sample date"])[0:10]
+        replicate = row["Replicate no"]
+        print(f"project={projectid} station={stationid} sampledate={sampledate} replicate={replicate}")
+        # Check for dublett on StationId, Date, Replicate before doing further analyse.
+        if len([r for r in data_rows if r["Station_id"] == stationid and r["Date"] == sampledate and r["Replicate"] == replicate]) == 0:
+
+            matching_rows = samples_df.loc[(samples_df["SampleDate"].str[:10] == sampledate) & (samples_df["SampleNo"] == replicate)]
+            if not matching_rows.empty:
+                matching_row = matching_rows.iloc[0]
+                sampleid = matching_row["Id"]
+
+                resp = am.getJson(token, f"{am.api_site}/api/projects/{projectid}/stations/{stationid}/biota/samples/{sampleid}/specimens/attributes")
+                if len(resp) > 0:
+                    attrib_df = json_normalize(resp)
+                    rows = attrib_df.loc[attrib_df["Name"] == "Ant individer"]
+                    if rows.empty:
+                        ant = 0
+                    else:
+                        ant = rows.iloc[0]["ValueN"]
+                    rows = attrib_df.loc[attrib_df["Name"] == "Snittvekt"]
+                    if rows.empty:
+                        vekt = 0
+                    else:
+                        vekt = rows.iloc[0]["ValueN"]
+                    rows = attrib_df.loc[attrib_df["Name"] == "Snittlengde"]
+                    if rows.empty:
+                        lengde = 0
+                    else:
+                        lengde = rows.iloc[0]["ValueN"]           
+
+                    if vekt > 0 and lengde > 0:
+                        point = point_df.loc[point_df["Station Id"] == stationid].iloc[0]
+                        latitude = point["Latitude"]
+                        longitude = point["Longitude"]
+                        kommune = callGeoserverQueryKommuneF(latitude, longitude)
+                        vannforekomst = callGeoserverQueryVannforekomst("miljodir_kystvannforekomster_f", latitude, longitude)
+                        vannforekomstID = None
+                        okoregion = None
+                        vanntype = None
+                        nasj_vanntype = None
+                        if vannforekomst is not None:
+                            vannforekomstID = vannforekomst["vannforekomstid"]
+                            okoregion = vannforekomst["okoregion"]
+                            vanntype = vannforekomst["vanntype"]
+                            nasj_vanntype = vannforekomst["nasjonalvanntype"]
+
+                        data_rows.append({"Latitude": latitude,
+                                        "Longitude": longitude,
+                                        "Date": sampledate,
+                                        "Ant": ant,
+                                        "TS_%": row["TTS\n%"],
+                                        "Lengde_cm": lengde,
+                                        "Vekt_g": vekt,
+                                        "Kommunenr": kommune,
+                                        "VannforekomstID": vannforekomstID,
+                                        "Økoregion": okoregion,
+                                        "Vanntype": vanntype,
+                                        "EQR_Type": nasj_vanntype,
+                                        "Station_id": stationid,
+                                        "Replicate": replicate})
+
+    out_df = pd.DataFrame(data_rows, columns=["Latitude", "Longitude", "Date", "Ant", "TS_%", "Lengde_cm",
+                                              "Vekt_g", "Kommunenr", "VannforekomstID", 
+                                              "Økoregion", "Vanntype", "EQR_Type", "Station_id", "Replicate"])
+    
+    with ExcelWriter(f"{ROOT_PATH}Mussel-niva.xlsx") as writer:
+        out_df.to_excel(writer)
 
 def rewriteVannmiljo_PTI():
     vannmiljo_df = pd.read_excel(f"{ROOT_PATH}WaterRegistrationExport-plankton.xlsx", "VannmiljoEksport")

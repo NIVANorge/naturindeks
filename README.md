@@ -3,7 +3,7 @@
 Code for collecting and managing raw data used for calculating Naturindeks.<br>
 Primarly intended to run within Jupyterhub. <br>
 <br>
-The rscript folder contains scripts for: <br>
+The <b>rscript</b> folder contains scripts for: <br>
 * convert2neqr.r: Convert compiled raw data to nEQR values based on reference values and class limits for the given indicator <br>
 * analyses_neqr.Rmd: Run a BRT model describing the observed nEQR values as function of water type and year, and predict nEQR for all relevant municipalities and years<br>
 * analyses_neqr.r: Run analyses_neqr.Rmd for all indicators and produce summary html.<br>

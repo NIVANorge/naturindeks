@@ -61,12 +61,11 @@ ind_names <- array(c("Naturindeks plankton innsjøer",
                  "Hardbunn vegetasjon nedre voksegrense kyst",
                  "Bløtbunn artsmangfold fauna kyst",
                  "Bløtbunn eutrofiindeks kyst",
-#                 "Blåskjell",
-                 "Planteplankton kyst"),dim=c(1,9),
-#dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
-dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","Chla")))
+                 "Blåskjell",
+                 "Planteplankton kyst"),dim=c(1,10),
+dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
 
-#index <- "PIT" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
+#index <- "blaaskjell" # Definererer hvilken indikator vi skal analysere. Kommenter ut når scriptet kjøres i løkke fra analyses_neqr.R
 print(paste0("Indikator: ",ind_names[,index]," (",index,")"))
 
 # Laster inn fil med NEQR-verdier:
@@ -142,11 +141,7 @@ for(datname in c("ForcingData","PredData")){
   for(i in 1:length(variabler)){
     dat[,variabler[i]] <- substr(dat$Vanntype,i,i)
   }
-  
-  for(i in 1:length(variabler)){
-    dat[,variabler[i]] <- substr(dat$Vanntype,i,i)
-  }
-  
+
   
 # Endrer koding for noen variabler:
   if(habitat == "innsjo"){
@@ -181,14 +176,17 @@ for(datname in c("ForcingData","PredData")){
       mutate(Gjennomstromminghastighet = na_if(Gjennomstromminghastighet,0))   
   }
   
-  # Slår sammen de to nordligste økoregionene for ferskvanns-habitat:
+# Slår sammen de to nordligste økoregionene for ferskvanns-habitat:
   if(habitat %in% c("innsjo","elver")){
-    Nordnorge <- c("N", "F") 
+    Nordnorge <- c("N", "F") ;
     dat <- 
-    dat %>% 
-    mutate(Okoregion = ifelse(Okoregion %in% Nordnorge, "N", Okoregion)) 
-    rm(Nordnorge)
-  }
+      dat %>% 
+      mutate(Okoregion = ifelse(Okoregion %in% Nordnorge, "N", Okoregion)) ;
+    rm(Nordnorge) ;
+    regions_names_all <- setNames(c("S","E","W","M","N"), c("Sørlandet","Østlandet","Vestlandet","Midtnorge", "Nord-Norge"))
+  }else{
+    regions_names_all <- setNames(c("S","N","M","H","G","B"), c("Skagerak","Nordsjøen Sør","Nordsjøen Nord","Norskehavet Sør","Norskehavet Nord","Barentshavet"))
+    }
   
   # Gjør om variabler til faktor
   dat <-
@@ -428,6 +426,7 @@ if(mod_type == "GAM"){
   }
   
   Preds <- Preds$fit
+  rm(step.model)
 }
 
 if(mod_type == "BRT"){
@@ -500,6 +499,14 @@ if(mod_type == "BRT"){
     mutate(Prediksjon = replace(Prediksjon, Prediksjon > 1, 1))%>%
     mutate(Prediksjon = replace(Prediksjon, Prediksjon < 0, 0.00001))
   }
+  
+  # Endrer evt. verdierunder 0 for blåskjell:
+  if(index == "blaaskjell"){
+  PredData_allyrs <- 
+    PredData_allyrs %>% 
+    mutate(Prediksjon = replace(Prediksjon, Prediksjon < 0, 0.00001))
+  }
+  
   Preds <- apply(pred_mat,1,mean)
   
   }
@@ -534,7 +541,7 @@ PredData_means <-
 
 write.table(PredData_means,paste0("../../02_Predictions/",index,".csv"),quote = FALSE, sep = ",", row.names = FALSE)
 
-rm(Preds, step.model)
+rm(Preds)
 ```
 
 # Sammenligning mellom observasjonsdata og prediksjoner
@@ -546,11 +553,13 @@ shapefile <- "../../01_Data/04_GIS/01_Kommuner/Norway_utm33n.shp"
 shp<- st_read(shapefile, quiet = TRUE) %>%
   rename(Kommunenr=KOMM)
 
+ylims <- c(0,1)
+
 # For blåskjell, replikerer observasjoner som strekker over flere kommuner
 if(index == "blaaskjell"){
 ForcingData_modell <- 
   ForcingData_modell %>%
-  mutate(Komm5 = as.numeric(Komm5)) #Setter kommunenr til numerisk
+  mutate(Komm5 = as.numeric(Komm5)) #Setter akke kommunenr til numerisk
 
 ForcingData_modell <- pivot_longer(ForcingData_modell,
                      cols = paste0("Komm",1:7),   # Kopierer for alle kommuner  
@@ -559,10 +568,13 @@ ForcingData_modell <- pivot_longer(ForcingData_modell,
 ForcingData_modell <- 
   ForcingData_modell %>%
   filter(!is.na(Kommunenr))
+
+# Blåskjell-prediksjoner kan være høyere enn 1
+ylims <- c(0, max(c(PredData_means$Prediksjon_snitt, ForcingData_modell$Response), na.rm = T))
+
 }
 
 
-ylims <- c(0,1)
 
 xvar <- "Response_mean"
 
@@ -588,7 +600,7 @@ for(y in 1:length(years)){
     summarise(Response_mean = mean(Response)) %>%
     dplyr::select(Kommunenr, all_of(xvar))
 
-  # Slår sammen shapefil og prediksjoner:
+    # Slår sammen shapefil og prediksjoner:
   shp_y <- shp %>%
     left_join(ForcingData_modell_y)
   
@@ -693,40 +705,52 @@ ggplot(corrdat, aes(Response_mean, Prediksjon_snitt)) +
 
 # Gjennomsnittlige verdier per økoregion
 
-```{r plot_means, eval=TRUE, echo=FALSE, fig.cap = "Gjennomsnitts-prediksjoner per år og økoregion (for ferskvann dekker kategorien Nord-Norge ytre hele Nord-Norge)"}
+```{r plot_means_pred, eval=TRUE, echo=FALSE, fig.cap = "Gjennomsnitts-prediksjoner per år og økoregion (for ferskvann dekker kategorien Nord-Norge ytre hele Nord-Norge). Gjennomsnittsverdier i datagrunnlaget er plottet som grå linjer (merk, det er varierende datagrunnlag mellom år)."}
 # Plot for prediksjoner per år og kommunenr
 
 PredData_means_regions <- 
   PredData_means %>% 
-  left_join(PredData_modell %>% dplyr::select(Kommunenr, Økoregion)) %>% 
-  group_by(Økoregion,Year) %>% 
+  left_join(PredData_modell %>% dplyr::select(Kommunenr, Okoregion)) %>% 
+  group_by(Okoregion,Year) %>% 
   summarise(Mean = mean(Prediksjon_snitt),
             Sd = sd(Prediksjon_snitt))
 
-regions <- unique(PredData_means_regions$Økoregion)
+ForcingData_means_regions <- 
+  ForcingData_modell %>% 
+  group_by(Okoregion,Year) %>% 
+  summarise(Mean = mean(Response))
+
+regions <- unique(PredData_means_regions$Okoregion)
 years <- unique(PredData_means_regions$Year)
 
 plots <- list()
-
+ylims <- c(min(PredData_means_regions$Mean - PredData_means_regions$Sd),  
+           max(PredData_means_regions$Mean + PredData_means_regions$Sd))
+  
 for(i in 1:length(regions)){
   # Trekker ut snitt for gitt region
-  dat_i <- PredData_means_regions %>% 
-    filter(Økoregion == regions[i]) 
+  pred_i <- PredData_means_regions %>% 
+    filter(Okoregion == regions[i]) 
+  
+  dat_i <- ForcingData_means_regions %>% 
+    filter(Okoregion == regions[i]) 
   
   # Definerer plot for gitt region
-  plots[[i]] <- ggplot(dat_i, aes(x = Year, y = Mean)) + 
-            geom_linerange(aes(x = Year, ymin = Mean-Sd, ymax = Mean+Sd), dat_i) +
-            geom_point(shape = 21, bg = "cyan", size = 3) +
-            theme_bw() +
-            ggtitle(regions[i]) +
-            xlim(range(years)) +
-            ylim(c(0,1))
+  plots[[i]] <- ggplot(pred_i, aes(x = Year, y = Mean)) + 
+    geom_linerange(aes(x = Year, ymin = Mean-Sd, ymax = Mean+Sd), pred_i) +
+    geom_point(shape = 21, bg = "cyan", size = 3) +
+      geom_line(aes(x = Year, y = Mean), dat_i, color = "grey") +
+    theme_bw() +
+    ggtitle(names(regions_names_all[regions[i]])) +
+    xlim(range(years)) +
+    ylim(ylims)
 
 }
 
 grid.arrange(grobs = plots, ncol = ceiling(length(regions)/2))
 
 ```
+
 
 # Opplasting til NI-databasen
 Predikerte NEQR-verdier blir lasta opp til NI-databasen på nett ved å bruke NIcalc-biblioteket i R i scriptet <a href="C:/Users/KVI/NIVA/240176 - Naturindeks for Norge 2025 - Documents/03_Data_and_analyses/naturindeks/analyser/NICalc_upload.r" download>NICalc_upload.r</a>. Laster først ned den eksisterende databasen for den gitte indikatoren, og oppdaterer så verdi (=prediksjon) og 'distrObjects' (beregnes av funksjoner i NIcalc). Verdier for kommuner og år vi ikke har prediksjoner for, men som finnes i databasen allerede, blir satt til NA.

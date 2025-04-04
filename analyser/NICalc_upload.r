@@ -32,7 +32,7 @@ myIndicators <- NIcalc::getIndicators()
 indID <- array(c(146,11,233,213,75,74,21,22,18,145),dim=c(1,10),
              dimnames = list(1,c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","blaaskjell","Chla")))
 
-for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell"
+for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla","blaaskjell")){ 
   # Laster inn prediksjoner 
   print(paste0("Laster inn prediksjoner for ",index))
   PredData_means <- read.table(paste0("../../02_Predictions/",index,".csv"),sep=",",header = TRUE)
@@ -142,6 +142,13 @@ for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"bl
   print("Setter referanseverdi til 1") 
   updatedIndicatorData$indicatorValues[indicatorData$indicatorValues$yearName == 
                                         "Referanseverdi",c(7:11)]<-list(1,1,1,3,"Beregnet fra modeller")
+  
+  # For blåskjell, setter enhet (for andre = nEQR, enhetsløs)
+  if(index =="blaaskjell"){
+    updatedIndicatorData$indicatorValues$unitOfMeasurement<-"(tørrvekt/N)/lengde"
+  } else {
+    updatedIndicatorData$indicatorValues$unitOfMeasurement<-"Enhetsløs (nEQR)"
+  } 
   
   print("Skriver til databasen")
   NIcalc::writeIndicatorValues(updatedIndicatorData)

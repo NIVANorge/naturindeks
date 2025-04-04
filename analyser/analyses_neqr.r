@@ -12,8 +12,7 @@
 rm(list = ls())
 
 
-#for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell",
-for (index in c("TIc","H","NQI1","Chla")){ #"blaaskjell",
+for (index in c("PTI","PIT","AIP","TIc","MSMDI","RSLA","H","NQI1","Chla")){ #"blaaskjell",
     ind_names <- array(c("Naturindeks plankton innsjøer",
                        "Begroing eutrofierings indeks elver",
                        "Begroing elver forsurings indeks",
@@ -22,14 +21,13 @@ for (index in c("TIc","H","NQI1","Chla")){ #"blaaskjell",
                        "Hardbunn vegetasjon nedre voksegrense kyst",
                        "Bløtbunn artsmangfold fauna kyst",
                        "Bløtbunn eutrofiindeks kyst",
-                       #                 "Blåskjell",
-                       "Planteplankton kyst"),dim=c(1,9),
-                     #dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
-                     dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","Chla")))
-  
+                                        "Blåskjell",
+                       "Planteplankton kyst"),dim=c(1,10),
+                     dimnames = list(1,c("PTI","PIT","AIP","TIc","RSLA","MSMDI","H","NQI1","blaaskjell","Chla")))
+
   rmarkdown::render("analyses_neqr.Rmd",  # rmd file for running code
                     output_file =  paste0("Summaries/",index,".html"),
                     params=list(new_title=paste0(ind_names[,index]," (",index,")")))
   
-     rm(list = ls())
+  rm(list = ls())
   }

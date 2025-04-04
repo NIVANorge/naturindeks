@@ -720,12 +720,14 @@ old.file <- list.files(path=inpath,pattern="skjell", recursive=TRUE, full.names 
 bskjell <- read_xlsx(old.file,sheet = 1) %>%
   rename(Year = Date)
 
+
 new.file <- list.files(path=inpath,pattern="mussel", recursive=TRUE, full.names = TRUE, ignore.case = TRUE)
 bskjell_ny <- read_xlsx(new.file,sheet = 1)  %>%
   mutate(Date = as.Date(ifelse(grepl("-", Date),
                              as.Date(Date, format = c("%Y-%m-%d")),                            
                              as.Date(Date, format = c("%d.%m.%Y"))))) %>% # setter Date til datatype "dato"
-  mutate(Year = format(Date, "%Y")) # lager en ny kolonne og legger inn verdier
+  mutate(Year = as.numeric(format(Date, "%Y")))  %>% # lager en ny kolonne og legger inn verdier
+  rename(Komm1 = Kommunenr)
   
 # Sjekk for replikate rader
 # duplicated <- bskjell  %>%
@@ -742,30 +744,34 @@ bskjell_ny <- read_xlsx(new.file,sheet = 1)  %>%
 #   arrange(Date)
 
 # Ny fil: beregner BMI som (tørrvekt/N)/lengde (allerede beregnet i gammel fil)
+# Vekt_g i ny fil = (våtvekt/N).
+# Tidligere var Dryweight_length_ratio beregnet som (Mean_weight (Våtvekt/N) x drywt (% tørrvekt)) / lnmea (lengde i mm)
+
 bskjell_ny <- bskjell_ny %>% 
-  mutate(Dryweight_length = (Vekt_g/Ant)/Lengde_cm) %>%
-  mutate(Dryweight_length_alt = (Vekt_g)/Lengde_cm) 
-  
+  mutate(Dryweight = Vekt_g *  `TS_%`) %>% 
+  mutate(Lengde_mm = Lengde_cm * 10) %>% 
+  mutate(Dryweight_length = Dryweight/Lengde_mm)  
     
 # Standardiseres for ulike referanseverdier moderat/eksponert kyst og andre kysttyper
 # Gammel fil: Kysttype med ord
 bskjell <- bskjell %>% 
   mutate(Reference = ifelse(grepl("eksponert", Kysttype),0.97, 1.49)) %>%
-  mutate(Response = Dryweight_length/Reference)  #Setter responsvariabel til normalisert versjon av vekt/lengde 
+  mutate(Response = Dryweight_length/Reference)    #Setter responsvariabel til normalisert versjon av vekt/lengde
 
 # Ny fil: Kysttype (EQR-type )med kode, der 1/2 innenfor hver økoregion er åpen eksponert/moderat eksponert
 bskjell_ny <- bskjell_ny %>% 
+  filter(!is.na(EQR_Type)) %>%
   mutate(Reference = ifelse(grepl(paste(c(1,2), collapse = "|"), EQR_Type),0.97, 1.49)) %>%
   mutate(Reference = ifelse(is.na(EQR_Type),NA, Reference)) %>%
-  %>%
-  
+  mutate(Response = Dryweight_length/Reference)  #Setter responsvariabel til normalisert versjon av vekt/lengde 
 
-Ref_bskjell = data.frame(name =  c("S1", "S2", "S3", "N1", "N2", "N3", "N4", "M1", "M2", "M3", "M4", "H1", "H2", "H3", "H4", "G1", "G2", "G3", "G4", "B1", "B3", "B4"),
-                      ref  =  c(0.97, 0.97, 1.49, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 2, 1.7, 1.7, 2, 1.9, 1, 0.9))
+# Kombiner ny og gammel
+bskjell <-  bskjell %>% 
+  full_join(bskjell_ny, by = c("Latitude", "Longitude", "Year", "Dryweight_length", "Økoregion", "Vanntype", "Komm1", "Reference", "Response"))
+
+# bskjell$Response_adj <- bskjell$Response
+# bskjell$Response_adj[bskjell$Response_adj>1] <- 1
 
 
-table(bskjell_ny$Vanntype)
-
-
-write_xlsx(bskjell,"NEQRdata/NEQR_blaaskjell.xlsx")
+write_xlsx(bskjell,paste0(outpath,"NEQR_blaaskjell.xlsx"))
 

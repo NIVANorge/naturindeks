@@ -1,7 +1,16 @@
 # Naturindeks
 
-Code for collecting and managing raw data used for calculating Naturindeks.
-Primarly intended to run within Jupyterhub.
+Code for collecting and managing raw data used for calculating Naturindeks.<br>
+Primarly intended to run within Jupyterhub. <br>
+<br>
+The rscript folder contains scripts for: <br>
+* convert2neqr.r: Convert compiled raw data to nEQR values based on reference values and class limits for the given indicator <br>
+* analyses_neqr.Rmd: Run a BRT model describing the observed nEQR values as function of water type and year, and predict nEQR for all relevant municipalities and years<br>
+* analyses_neqr.r: Run analyses_neqr.Rmd for all indicators and produce summary html.<br>
+* blotbunn_hav.Rmd: Combine data specifically for the 'bløtbunn hav' indicator, calculate averages per ocean area.<br>
+* NICalc_upload.r: Update NI-database with the predictions <br>
+* compile_mussel_data.R: Compile mussel data from internal NIVA database.<br>
+
 
 ## Installing Python packages
 
